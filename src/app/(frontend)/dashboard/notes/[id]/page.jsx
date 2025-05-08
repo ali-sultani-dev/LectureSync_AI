@@ -6,6 +6,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Play, Pause, Clock } from 'lucide-react'
 import { format } from 'date-fns'
+import { saveAs } from 'file-saver'
+import JSZip from 'jszip'
+import { jsPDF } from 'jspdf'
 
 // Helper to format seconds as mm:ss
 function formatTime(seconds) {
@@ -15,12 +18,23 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// Helper: Recursively extract all text from Lexical rich text
+function extractLexicalText(node) {
+  if (!node) return ''
+  if (typeof node.text === 'string') return node.text
+  if (Array.isArray(node.children)) {
+    return node.children.map(extractLexicalText).join(' ')
+  }
+  return ''
+}
+
 export default function NotePage() {
   const { id } = useParams()
   const audioRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
@@ -74,6 +88,69 @@ export default function NotePage() {
     }
   }
 
+  const downloadNoteFiles = async () => {
+    if (!note) return
+    setIsDownloading(true)
+    try {
+      // Generate PDF
+      let pdfBlob, pdfFileName
+      try {
+        const doc = new jsPDF()
+        doc.setFontSize(18)
+        doc.text(note.title || 'Untitled Note', 10, 20)
+        doc.setFontSize(12)
+        doc.text(`Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`, 10, 30)
+        if (note.summary) {
+          doc.setFontSize(14)
+          doc.text('Summary:', 10, 45)
+          doc.setFontSize(12)
+          const summaryText = extractLexicalText(note.summary?.root) || ''
+          doc.text(doc.splitTextToSize(summaryText, 180), 10, 55)
+        }
+        pdfBlob = doc.output('blob')
+        pdfFileName = `${note.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'note'}.pdf`
+      } catch (err) {
+        alert('Failed to generate PDF.')
+        setIsDownloading(false)
+        return
+      }
+
+      // Prepare audio
+      let audioBlob = null
+      let audioFileName = ''
+      if (note.audioFile?.url) {
+        let origBlob
+        let audioExt
+        try {
+          const audioResp = await fetch(note.audioFile.url)
+          origBlob = await audioResp.blob()
+          audioExt = note.audioFile.filename?.split('.').pop()?.toLowerCase() || 'wav'
+        } catch (err) {
+          alert('Failed to fetch audio file.')
+          setIsDownloading(false)
+          return
+        }
+        audioBlob = origBlob
+        audioFileName = `${note.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'note'}_audio.${audioExt}`
+      }
+
+      // Zip PDF and audio
+      try {
+        const zip = new JSZip()
+        zip.file(pdfFileName, pdfBlob)
+        if (audioBlob) zip.file(audioFileName, audioBlob)
+        const zipBlob = await zip.generateAsync({ type: 'blob' })
+        saveAs(zipBlob, `${note.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'note'}.zip`)
+      } catch (err) {
+        alert('Failed to generate ZIP.')
+      }
+    } catch (err) {
+      alert('Failed to download files.')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   if (isLoading) return <div>Loading…</div>
   if (isError || !note || !note.id) {
     return (
@@ -87,6 +164,11 @@ export default function NotePage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <div className="w-full max-w-2xl">
+        <div className="mb-4 flex gap-2 justify-end items-center">
+          <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
+            {isDownloading ? 'Downloading...' : 'Download'}
+          </Button>
+        </div>
         <h1 className="text-2xl font-bold mb-2">{note.title}</h1>
         <p className="text-sm text-muted-foreground mb-6">
           {note?.createdAt && !isNaN(new Date(note.createdAt))
