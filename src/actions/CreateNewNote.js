@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 
 import { transcribeAudio } from './transcribe'
 import { generateTitleFromTranscript } from './generateTitleFromTranscript'
+import { summariseTranscript } from './summariseTranscript'
 
 export async function CreateNewNote({ file }) {
   if (!(file instanceof File)) {
@@ -53,6 +54,15 @@ export async function CreateNewNote({ file }) {
     title = 'New Audio Note'
   }
 
+  // Summarise transcript
+  let summary = ''
+  try {
+    summary = await summariseTranscript(transcriptText)
+  } catch (err) {
+    console.error('Summarisation failed:', err)
+    summary = transcriptText // fallback to transcript if summarisation fails
+  }
+
   // Helper to wrap plain text into Lexical richText
   function toRichText(t) {
     return {
@@ -91,7 +101,7 @@ export async function CreateNewNote({ file }) {
     title,
     audioFile: media.doc.id,
     transcript: toRichText(transcriptText),
-    summary: toRichText(''),
+    summary: toRichText(summary),
   }
   console.log('Note creation request body:', noteBody)
 

@@ -2,24 +2,19 @@
 
 import React, { useRef, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, Clock, HelpCircle, ArrowUpRight } from 'lucide-react'
+import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical } from 'lucide-react'
 import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { jsPDF } from 'jspdf'
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { RichText } from '@payloadcms/richtext-lexical/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChevronsUpDown } from 'lucide-react'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 
 // Helper to format seconds as mm:ss
 function formatTime(seconds) {
@@ -48,17 +43,43 @@ export default function NotePage() {
   const [isDownloading, setIsDownloading] = useState(false)
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const queryClient = useQueryClient()
+  const [editMode, setEditMode] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editSummary, setEditSummary] = useState('')
+  const [editTranscript, setEditTranscript] = useState('')
+  const summaryTextareaRef = useRef(null)
+  const transcriptTextareaRef = useRef(null)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const {
-    data: note,
-    isLoading,
-    isError,
-  } = useQuery({
+  const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
     queryFn: () =>
       fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' }).then((r) => r.json()),
     enabled: !!id,
   })
+
+  useEffect(() => {
+    if (note && editMode) {
+      setEditTitle(note.title || '')
+      setEditSummary(extractLexicalText(note.summary?.root))
+      setEditTranscript(extractLexicalText(note.transcript?.root))
+    }
+  }, [note, editMode])
+
+  useEffect(() => {
+    if (editMode && summaryTextareaRef.current) {
+      summaryTextareaRef.current.style.height = 'auto'
+      summaryTextareaRef.current.style.height = summaryTextareaRef.current.scrollHeight + 'px'
+    }
+  }, [editSummary, editMode])
+  useEffect(() => {
+    if (editMode && transcriptTextareaRef.current) {
+      transcriptTextareaRef.current.style.height = 'auto'
+      transcriptTextareaRef.current.style.height = transcriptTextareaRef.current.scrollHeight + 'px'
+    }
+  }, [editTranscript, editMode])
 
   useEffect(() => {
     const src = note?.audioFile?.url
@@ -116,11 +137,7 @@ export default function NotePage() {
         doc.setFontSize(18)
         doc.text(note.title || 'Untitled Note', 10, 20)
         doc.setFontSize(12)
-        doc.text(
-          `Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`,
-          10,
-          30,
-        )
+        doc.text(`Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`, 10, 30)
         if (note.summary) {
           doc.setFontSize(14)
           doc.text('Summary:', 10, 45)
@@ -172,6 +189,54 @@ export default function NotePage() {
     }
   }
 
+  const deleteNote = async () => {
+    if (!id) return
+    if (!window.confirm('Are you sure you want to delete this note? This action cannot be undone.')) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/notes/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error(await res.text())
+      queryClient.invalidateQueries(['notes'])
+      router.push('/dashboard/notes/new')
+    } catch (err) {
+      alert('Failed to delete note. ' + (err instanceof Error ? err.message : ''))
+      setIsDeleting(false)
+    }
+  }
+
+  const saveEdit = async () => {
+    setIsSaving(true)
+    try {
+      const res = await fetch(`/api/notes/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle,
+          summary: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editSummary, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
+          transcript: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editTranscript, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      // Update the query cache with the new values
+      queryClient.setQueryData(['note', id], old => ({
+        ...old,
+        title: editTitle,
+        summary: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editSummary, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
+        transcript: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editTranscript, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
+      }))
+      setEditMode(false)
+    } catch (err) {
+      alert('Failed to save changes.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   if (isLoading) return <div>Loading…</div>
   if (isError || !note || !note.id) {
     return (
@@ -189,69 +254,147 @@ export default function NotePage() {
           <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
             {isDownloading ? 'Downloading...' : 'Download'}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 p-0 flex items-center justify-center align-middle"><MoreVertical /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setEditMode(true)}>Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={deleteNote} className="text-red-600">{isDeleting ? 'Deleting...' : 'Delete'}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <h1 className="text-2xl font-bold mb-2">{note.title}</h1>
-        <p className="text-sm text-muted-foreground mb-6">
-          {note?.createdAt && !isNaN(new Date(note.createdAt))
-            ? format(new Date(note.createdAt), 'EEEE, MMMM d, yyyy')
-            : 'Unknown date'}
-        </p>
+        <div className="mb-8 flex flex-col items-start">
+          {editMode ? (
+            <div className="w-full border-2 border-primary rounded mb-2">
+              <Input
+                className="text-xl md:text-2xl font-bold break-words w-full text-left bg-transparent box-border transition-all leading-tight p-0 m-0 border-0 focus:ring-0 focus:outline-none shadow-none"
+                style={{ minHeight: 'unset', height: 'auto', marginBottom: 0 }}
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+              />
+            </div>
+          ) : (
+            <h1 className="text-xl md:text-2xl font-bold break-words w-full text-left m-0">
+              {note.title}
+            </h1>
+          )}
+          <p className="text-sm text-muted-foreground mt-1 text-left">
+            {note?.createdAt && !isNaN(new Date(note.createdAt))
+              ? format(new Date(note.createdAt), 'EEEE, MMMM d, yyyy')
+              : 'Unknown date'}
+          </p>
+        </div>
         {note.audioFile?.url && (
-          <Card className={`mb-6 shadow-none border-2 border-muted`}>
+          <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
             <CardContent>
               <audio ref={audioRef} src={note.audioFile.url} preload="metadata" />
-              <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-4">
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-10 w-10 rounded-full"
                   onClick={togglePlayback}
                 >
-                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  {isPlaying ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
                 </Button>
                 <div className="flex-1">
                   <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
                     <div
                       className="h-full bg-primary"
-                      style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
+                      style={{
+                        width: duration
+                          ? `${(currentTime / duration) * 100}%`
+                          : '0%',
+                      }}
                     />
                   </div>
                 </div>
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Clock className="h-3 w-3" />
                   <span>
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                    {Math.floor(currentTime / 60)}:
+                    {String(Math.floor(currentTime % 60)).padStart(2, '0')} /{' '}
+                    {Math.floor(duration / 60)}:
+                    {String(Math.floor(duration % 60)).padStart(2, '0')}
                   </span>
                 </div>
               </div>
             </CardContent>
-            {note.transcript && (
-              <CardFooter className="px-2 -mb-3.5">
-                <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full space-y-2">
-                  <div className="flex items-center space-x-4 px-4">
-                    <h4 className="text-sm font-semibold">Transcript</h4>
-                    <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <ChevronsUpDown className="h-4 w-4" />
-                        <span className="sr-only">Toggle</span>
-                      </Button>
-                    </CollapsibleTrigger>
-                  </div>
-                  <CollapsibleContent>
-                    <Card className="shadow-none border-0">
-                      <CardHeader>
-                        <CardTitle>Transcript</CardTitle>
-                        <CardDescription>Full lecture transcript</CardDescription>
-                      </CardHeader>
-                      <CardContent>
+            <CardFooter className="px-2 -mb-3.5">
+              <Collapsible
+                open={isOpen}
+                onOpenChange={setIsOpen}
+                className="w-full space-y-2"
+              >
+                <div className="flex items-center space-x-4 px-4">
+                  <h4 className="text-sm font-semibold">Transcript</h4>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      <ChevronsUpDown className="h-4 w-4" />
+                      <span className="sr-only">Toggle</span>
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent>
+                  <Card className={`shadow-none${editMode ? ' border-2 border-primary' : ''}`}>
+                    <CardHeader>
+                      <CardTitle>Transcript</CardTitle>
+                      <CardDescription>
+                        Full lecture transcript
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {editMode ? (
+                        <textarea
+                          ref={transcriptTextareaRef}
+                          value={editTranscript}
+                          onChange={e => setEditTranscript(e.target.value)}
+                          className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
+                          style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
+                          rows={1}
+                          spellCheck={true}
+                        />
+                      ) : (
                         <RichText data={note.transcript} />
-                      </CardContent>
-                    </Card>
-                  </CollapsibleContent>
-                </Collapsible>
-              </CardFooter>
-            )}
+                      )}
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardFooter>
           </Card>
+        )}
+        <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
+          <CardHeader className="pb-3">
+            <CardTitle>Summary</CardTitle>
+            <CardDescription>AI-generated summary</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {editMode ? (
+              <textarea
+                ref={summaryTextareaRef}
+                value={editSummary}
+                onChange={e => setEditSummary(e.target.value)}
+                className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
+                style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
+                rows={1}
+                spellCheck={true}
+              />
+            ) : (
+              <RichText data={note.summary} />
+            )}
+          </CardContent>
+        </Card>
+        {editMode && (
+          <div className="flex gap-2 justify-end mb-8">
+            <Button variant="outline" onClick={() => setEditMode(false)} disabled={isSaving}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
+          </div>
         )}
         {/* Quiz Card UI */}
         <div
@@ -260,7 +403,7 @@ export default function NotePage() {
           aria-label="Take a Quiz on this Note"
           className="mb-8 outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer group"
           onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               router.push(`/dashboard/notes/${id}/quiz`)
             }
@@ -273,9 +416,7 @@ export default function NotePage() {
                 Quiz Yourself
                 <ArrowUpRight className="w-5 h-5 ml-auto text-primary opacity-80 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </CardTitle>
-              <CardDescription>
-                Test your understanding of this note with an AI-generated quiz.
-              </CardDescription>
+              <CardDescription>Test your understanding of this note with an AI-generated quiz.</CardDescription>
             </CardHeader>
           </Card>
         </div>
