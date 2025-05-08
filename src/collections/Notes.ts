@@ -1,9 +1,14 @@
 import type { CollectionConfig } from 'payload'
 
-export const Media: CollectionConfig = {
-  slug: 'media',
+export const Notes: CollectionConfig = {
+  slug: 'notes',
+  admin: {
+    useAsTitle: 'title',
+    defaultColumns: ['title', 'createdAt', 'owner', 'updatedAt'],
+    // no access here admin UI control by top level access
+  },
   access: {
-    // Only admins or owner can read
+    // admin read all user only own
     read: ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
       if (req.user) {
@@ -15,7 +20,7 @@ export const Media: CollectionConfig = {
       }
       return false
     },
-    // Only allow updating if admin or owner
+    // update if admin or owner
     update: (args: any) => {
       const { req, doc } = args
       if (req.user && (req.user as any).role === 'admin') return true
@@ -28,7 +33,7 @@ export const Media: CollectionConfig = {
         return true
       return false
     },
-    // Only allow deleting if admin or owner
+    // delete if admin or owner
     delete: (args: any) => {
       const { req, doc } = args
       if (req.user && (req.user as any).role === 'admin') return true
@@ -41,14 +46,50 @@ export const Media: CollectionConfig = {
         return true
       return false
     },
-    // Only allow creating if logged in (and set owner to self)
-    create: ({ req }) => !!req.user,
+    // create only if login owner is you
+    create: (args: any) => {
+      const { req } = args
+      return !!req.user
+    },
   },
   fields: [
     {
-      name: 'alt',
+      name: 'title',
       type: 'text',
       required: true,
+      label: 'Title',
+      admin: {
+        description: 'main title for note',
+      },
+    },
+    {
+      name: 'audioFile',
+      type: 'upload',
+      relationTo: 'media',
+      required: false,
+      label: 'Audio File',
+      filterOptions: {
+        mimeType: { contains: 'audio' },
+      },
+      admin: {
+        description: 'upload audio file if want',
+      },
+    },
+    {
+      name: 'transcript',
+      label: 'Audio Transcript',
+      type: 'richText',
+      admin: {
+        description: 'full transcript content',
+      },
+    },
+    {
+      name: 'summary',
+      type: 'richText',
+      label: 'Summary Content',
+      admin: {
+        description: 'AI make summary or you write',
+      },
     },
     {
       name: 'owner',
@@ -64,5 +105,5 @@ export const Media: CollectionConfig = {
       },
     },
   ],
-  upload: true,
+  timestamps: true,
 }
