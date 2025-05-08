@@ -2,24 +2,18 @@
 
 import React, { useRef, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, Clock, HelpCircle, ArrowUpRight } from 'lucide-react'
+import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical } from 'lucide-react'
 import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { jsPDF } from 'jspdf'
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { RichText } from '@payloadcms/richtext-lexical/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChevronsUpDown } from 'lucide-react'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 
 // Helper to format seconds as mm:ss
 function formatTime(seconds) {
@@ -48,12 +42,10 @@ export default function NotePage() {
   const [isDownloading, setIsDownloading] = useState(false)
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const queryClient = useQueryClient()
 
-  const {
-    data: note,
-    isLoading,
-    isError,
-  } = useQuery({
+  const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
     queryFn: () =>
       fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' }).then((r) => r.json()),
@@ -116,11 +108,7 @@ export default function NotePage() {
         doc.setFontSize(18)
         doc.text(note.title || 'Untitled Note', 10, 20)
         doc.setFontSize(12)
-        doc.text(
-          `Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`,
-          10,
-          30,
-        )
+        doc.text(`Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`, 10, 30)
         if (note.summary) {
           doc.setFontSize(14)
           doc.text('Summary:', 10, 45)
@@ -172,6 +160,25 @@ export default function NotePage() {
     }
   }
 
+  const deleteNote = async () => {
+    if (!id) return
+    if (!window.confirm('Are you sure you want to delete this note? This action cannot be undone.')) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/notes/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error(await res.text())
+      queryClient.invalidateQueries(['notes'])
+      router.push('/dashboard/notes/new')
+    } catch (err) {
+      alert('Failed to delete note. ' + (err instanceof Error ? err.message : ''))
+      setIsDeleting(false)
+    }
+  }
+
   if (isLoading) return <div>Loading…</div>
   if (isError || !note || !note.id) {
     return (
@@ -189,6 +196,15 @@ export default function NotePage() {
           <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
             {isDownloading ? 'Downloading...' : 'Download'}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 p-0 flex items-center justify-center align-middle"><MoreVertical /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setEditMode(true)}>Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={deleteNote} className="text-red-600">{isDeleting ? 'Deleting...' : 'Delete'}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <h1 className="text-2xl font-bold mb-2">{note.title}</h1>
         <p className="text-sm text-muted-foreground mb-6">
@@ -260,7 +276,7 @@ export default function NotePage() {
           aria-label="Take a Quiz on this Note"
           className="mb-8 outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer group"
           onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               router.push(`/dashboard/notes/${id}/quiz`)
             }
@@ -273,9 +289,7 @@ export default function NotePage() {
                 Quiz Yourself
                 <ArrowUpRight className="w-5 h-5 ml-auto text-primary opacity-80 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </CardTitle>
-              <CardDescription>
-                Test your understanding of this note with an AI-generated quiz.
-              </CardDescription>
+              <CardDescription>Test your understanding of this note with an AI-generated quiz.</CardDescription>
             </CardHeader>
           </Card>
         </div>

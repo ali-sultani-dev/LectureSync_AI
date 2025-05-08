@@ -33,18 +33,10 @@ export const Notes: CollectionConfig = {
         return true
       return false
     },
-    // delete if admin or owner
+    // delete: allow any logged-in user
     delete: (args: any) => {
-      const { req, doc } = args
-      if (req.user && (req.user as any).role === 'admin') return true
-      if (
-        req.user &&
-        doc &&
-        doc.owner &&
-        req.user.id === (typeof doc.owner === 'object' ? doc.owner.id : doc.owner)
-      )
-        return true
-      return false
+      const { req } = args
+      return !!req.user
     },
     // create only if login owner is you
     create: (args: any) => {
