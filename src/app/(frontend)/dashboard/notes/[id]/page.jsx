@@ -44,6 +44,9 @@ export default function NotePage() {
   const [isOpen, setIsOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const queryClient = useQueryClient()
+  const [editMode, setEditMode] = useState(false)
+  const [editSummary, setEditSummary] = useState('')
+  const summaryTextareaRef = useRef(null)
 
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
@@ -269,6 +272,15 @@ export default function NotePage() {
             )}
           </Card>
         )}
+        <Card className={`mb-6 shadow-none border-2 border-muted`}>
+          <CardHeader className="pb-3">
+            <CardTitle>Summary</CardTitle>
+            <CardDescription>AI-generated summary</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RichText data={note.summary} />
+          </CardContent>
+        </Card>
         {/* Quiz Card UI */}
         <div
           role="button"
