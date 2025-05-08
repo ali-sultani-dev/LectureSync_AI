@@ -1,0 +1,93 @@
+'use server'
+
+import { cookies } from 'next/headers'
+
+export async function CreateNewNote({ file }) {
+  if (!(file instanceof File)) {
+    throw new Error('Provide a File under "file"')
+  }
+
+  const cookieHeader = (await cookies()).toString()
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+
+  //   Upload media
+  const mfd = new FormData()
+  mfd.append('file', file)
+  mfd.append('_payload', JSON.stringify({ alt: 'Audio note upload' }))
+  const mediaRes = await fetch(`${baseUrl}/api/media`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Cookie: cookieHeader },
+    body: mfd,
+  })
+
+  if (!mediaRes.ok) {
+    const errText = await mediaRes.text()
+    console.error('Media upload failed:', errText)
+    throw new Error('Media upload failed')
+  }
+  const media = await mediaRes.json()
+  console.log('Uploaded media:', media)
+
+  // Helper to wrap plain text into Lexical richText
+  function toRichText(t) {
+    return {
+      root: {
+        type: 'root',
+        version: 1,
+        direction: 'ltr',
+        format: '',
+        indent: 0,
+        children: [
+          {
+            type: 'paragraph',
+            version: 1,
+            direction: 'ltr',
+            format: '',
+            indent: 0,
+            children: [
+              {
+                type: 'text',
+                version: 1,
+                text: t || '',
+                format: 0,
+                detail: 0,
+                style: '',
+                mode: 'normal',
+              },
+            ],
+          },
+        ],
+      },
+    }
+  }
+
+  // Create the Note
+  const noteBody = {
+    title: 'New Audio Note',
+    audioFile: media.doc.id,
+    transcript: toRichText(''),
+    summary: toRichText(''),
+  }
+  console.log('Note creation request body:', noteBody)
+
+  const noteRes = await fetch(`${baseUrl}/api/notes`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeader,
+    },
+    body: JSON.stringify(noteBody),
+  })
+
+  if (!noteRes.ok) {
+    const errText = await noteRes.text()
+    console.error('Note creation failed:', errText)
+    throw new Error('Note creation failed')
+  }
+
+  const note = await noteRes.json()
+  console.log('Created note:', note)
+  return note
+}
