@@ -2,6 +2,8 @@
 
 import { cookies } from 'next/headers'
 
+import { transcribeAudio } from './transcribe'
+
 export async function CreateNewNote({ file }) {
   if (!(file instanceof File)) {
     throw new Error('Provide a File under "file"')
@@ -28,6 +30,18 @@ export async function CreateNewNote({ file }) {
   }
   const media = await mediaRes.json()
   console.log('Uploaded media:', media)
+
+  // Transcribe audio
+  let transcriptText = ''
+  try {
+    const fd = new FormData()
+    fd.append('audio', file, 'audio.webm')
+    const result = await transcribeAudio(fd)
+    transcriptText = result.text
+  } catch (err) {
+    console.error('Transcription failed:', err)
+    throw new Error('Transcription failed')
+  }
 
   // Helper to wrap plain text into Lexical richText
   function toRichText(t) {
@@ -66,7 +80,7 @@ export async function CreateNewNote({ file }) {
   const noteBody = {
     title: 'New Audio Note',
     audioFile: media.doc.id,
-    transcript: toRichText(''),
+    transcript: toRichText(transcriptText),
     summary: toRichText(''),
   }
   console.log('Note creation request body:', noteBody)
