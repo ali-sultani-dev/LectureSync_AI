@@ -1,14 +1,15 @@
 'use client'
 
 import React, { useRef, useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, Clock } from 'lucide-react'
+import { Play, Pause, Clock, HelpCircle, ArrowUpRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { jsPDF } from 'jspdf'
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 // Helper to format seconds as mm:ss
 function formatTime(seconds) {
@@ -35,6 +36,7 @@ export default function NotePage() {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isDownloading, setIsDownloading] = useState(false)
+  const router = useRouter()
 
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
@@ -163,7 +165,7 @@ export default function NotePage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-4xl">
         <div className="mb-4 flex gap-2 justify-end items-center">
           <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
             {isDownloading ? 'Downloading...' : 'Download'}
@@ -204,6 +206,30 @@ export default function NotePage() {
             </div>
           </div>
         )}
+        {/* Quiz Card UI */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Take a Quiz on this Note"
+          className="mb-8 outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer group"
+          onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              router.push(`/dashboard/notes/${id}/quiz`)
+            }
+          }}
+        >
+          <Card className="mb-6 shadow-none border-2 border-muted transition-shadow group-hover:border-primary w-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HelpCircle className="w-6 h-6 text-primary" />
+                Quiz Yourself
+                <ArrowUpRight className="w-5 h-5 ml-auto text-primary opacity-80 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+              </CardTitle>
+              <CardDescription>Test your understanding of this note with an AI-generated quiz.</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
       </div>
     </div>
   )
