@@ -9,7 +9,17 @@ import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { jsPDF } from 'jspdf'
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@/components/ui/card'
+import { RichText } from '@payloadcms/richtext-lexical/react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ChevronsUpDown } from 'lucide-react'
 
 // Helper to format seconds as mm:ss
 function formatTime(seconds) {
@@ -37,8 +47,13 @@ export default function NotePage() {
   const [duration, setDuration] = useState(0)
   const [isDownloading, setIsDownloading] = useState(false)
   const router = useRouter()
+  const [isOpen, setIsOpen] = useState(false)
 
-  const { data: note, isLoading, isError } = useQuery({
+  const {
+    data: note,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['note', id],
     queryFn: () =>
       fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' }).then((r) => r.json()),
@@ -101,7 +116,11 @@ export default function NotePage() {
         doc.setFontSize(18)
         doc.text(note.title || 'Untitled Note', 10, 20)
         doc.setFontSize(12)
-        doc.text(`Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`, 10, 30)
+        doc.text(
+          `Date: ${note.createdAt ? format(new Date(note.createdAt), 'yyyy-MM-dd HH:mm') : ''}`,
+          10,
+          30,
+        )
         if (note.summary) {
           doc.setFontSize(14)
           doc.text('Summary:', 10, 45)
@@ -178,33 +197,61 @@ export default function NotePage() {
             : 'Unknown date'}
         </p>
         {note.audioFile?.url && (
-          <div className="mb-8">
-            <audio ref={audioRef} src={note.audioFile.url} preload="metadata" />
-            <div className="flex items-center gap-4 mt-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={togglePlayback}
-              >
-                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </Button>
-              <div className="flex-1">
-                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary"
-                    style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
-                  />
+          <Card className={`mb-6 shadow-none border-2 border-muted`}>
+            <CardContent>
+              <audio ref={audioRef} src={note.audioFile.url} preload="metadata" />
+              <div className="flex items-center gap-4 mt-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-full"
+                  onClick={togglePlayback}
+                >
+                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <div className="flex-1">
+                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary"
+                      style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span>
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                <span>
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+            {note.transcript && (
+              <CardFooter className="px-2 -mb-3.5">
+                <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full space-y-2">
+                  <div className="flex items-center space-x-4 px-4">
+                    <h4 className="text-sm font-semibold">Transcript</h4>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <ChevronsUpDown className="h-4 w-4" />
+                        <span className="sr-only">Toggle</span>
+                      </Button>
+                    </CollapsibleTrigger>
+                  </div>
+                  <CollapsibleContent>
+                    <Card className="shadow-none border-0">
+                      <CardHeader>
+                        <CardTitle>Transcript</CardTitle>
+                        <CardDescription>Full lecture transcript</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <RichText data={note.transcript} />
+                      </CardContent>
+                    </Card>
+                  </CollapsibleContent>
+                </Collapsible>
+              </CardFooter>
+            )}
+          </Card>
         )}
         {/* Quiz Card UI */}
         <div
@@ -213,7 +260,7 @@ export default function NotePage() {
           aria-label="Take a Quiz on this Note"
           className="mb-8 outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer group"
           onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
-          onKeyDown={e => {
+          onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               router.push(`/dashboard/notes/${id}/quiz`)
             }
@@ -226,7 +273,9 @@ export default function NotePage() {
                 Quiz Yourself
                 <ArrowUpRight className="w-5 h-5 ml-auto text-primary opacity-80 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </CardTitle>
-              <CardDescription>Test your understanding of this note with an AI-generated quiz.</CardDescription>
+              <CardDescription>
+                Test your understanding of this note with an AI-generated quiz.
+              </CardDescription>
             </CardHeader>
           </Card>
         </div>
