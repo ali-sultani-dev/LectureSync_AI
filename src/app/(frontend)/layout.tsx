@@ -1,5 +1,6 @@
 import React from 'react'
 import './styles.css'
+import ClientProviders from '@/components/ClientProviders'
 
 export const metadata = {
   title: 'LectureSync AI',
@@ -12,7 +13,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <main>{children}</main>
+        <ClientProviders>{children}</ClientProviders>
       </body>
     </html>
   )
