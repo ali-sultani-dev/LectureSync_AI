@@ -248,7 +248,7 @@ export default function NotePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center p-6 pt-10 pb-24">
       <div className="w-full max-w-4xl">
         <div className="mb-4 flex gap-2 justify-end items-center">
           <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
@@ -285,90 +285,101 @@ export default function NotePage() {
               : 'Unknown date'}
           </p>
         </div>
-        {note.audioFile?.url && (
-          <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
-            <CardContent>
-              <audio ref={audioRef} src={note.audioFile.url} preload="metadata" />
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-full"
-                  onClick={togglePlayback}
-                >
-                  {isPlaying ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                </Button>
-                <div className="flex-1">
-                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary"
-                      style={{
-                        width: duration
-                          ? `${(currentTime / duration) * 100}%`
-                          : '0%',
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  <span>
-                    {Math.floor(currentTime / 60)}:
-                    {String(Math.floor(currentTime % 60)).padStart(2, '0')} /{' '}
-                    {Math.floor(duration / 60)}:
-                    {String(Math.floor(duration % 60)).padStart(2, '0')}
-                  </span>
+      
+        <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
+          <CardContent>
+            <audio
+              ref={audioRef}
+              src={note.audioFile?.url || undefined}
+              preload="metadata"
+              disabled={!note.audioFile?.url}
+              key={note.audioFile?.url || 'no-audio'}
+            />
+            <div className="flex items-center gap-4">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={togglePlayback}
+                disabled={!note.audioFile?.url}
+              >
+                {isPlaying ? (
+                  <Pause className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+              <div className="flex-1">
+                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary"
+                    style={{
+                      width: duration
+                        ? `${(currentTime / duration) * 100}%`
+                        : '0%',
+                    }}
+                  />
                 </div>
               </div>
-            </CardContent>
-            <CardFooter className="px-2 -mb-3.5">
-              <Collapsible
-                open={isOpen}
-                onOpenChange={setIsOpen}
-                className="w-full space-y-2"
-              >
-                <div className="flex items-center space-x-4 px-4">
-                  <h4 className="text-sm font-semibold">Transcript</h4>
-                  <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <ChevronsUpDown className="h-4 w-4" />
-                      <span className="sr-only">Toggle</span>
-                    </Button>
-                  </CollapsibleTrigger>
-                </div>
-                <CollapsibleContent>
-                  <Card className={`shadow-none${editMode ? ' border-2 border-primary' : ''}`}>
-                    <CardHeader>
-                      <CardTitle>Transcript</CardTitle>
-                      <CardDescription>
-                        Full lecture transcript
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {editMode ? (
-                        <textarea
-                          ref={transcriptTextareaRef}
-                          value={editTranscript}
-                          onChange={e => setEditTranscript(e.target.value)}
-                          className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
-                          style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
-                          rows={1}
-                          spellCheck={true}
-                        />
-                      ) : (
-                        <RichText data={note.transcript} />
-                      )}
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </Collapsible>
-            </CardFooter>
-          </Card>
-        )}
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>
+                  {Math.floor(currentTime / 60)}:
+                  {String(Math.floor(currentTime % 60)).padStart(2, '0')} /{' '}
+                  {Math.floor(duration / 60)}:
+                  {String(Math.floor(duration % 60)).padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+            {!note.audioFile?.url && (
+              <div className="text-muted-foreground text-center mt-2 text-sm">No audio to play for this note.</div>
+            )}
+          </CardContent>
+          <CardFooter className="px-2 -mb-3.5">
+            <Collapsible
+              open={isOpen}
+              onOpenChange={setIsOpen}
+              className="w-full space-y-2"
+            >
+              <div className="flex items-center space-x-4 px-4">
+                <h4 className="text-sm font-semibold">Transcript</h4>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <ChevronsUpDown className="h-4 w-4" />
+                    <span className="sr-only">Toggle</span>
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent>
+                <Card className={`shadow-none${editMode ? ' border-2 border-primary' : ''}`}>
+                  <CardHeader>
+                    <CardTitle>Transcript</CardTitle>
+                    <CardDescription>
+                      Full lecture transcript
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {editMode ? (
+                      <textarea
+                        ref={transcriptTextareaRef}
+                        value={editTranscript}
+                        onChange={e => setEditTranscript(e.target.value)}
+                        className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
+                        style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
+                        rows={1}
+                        spellCheck={true}
+                      />
+                    ) : note.transcript ? (
+                      <RichText data={note.transcript} />
+                    ) : (
+                      <div className="text-muted-foreground">No transcript available for this note.</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </CollapsibleContent>
+            </Collapsible>
+          </CardFooter>
+        </Card>
         <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
           <CardHeader className="pb-3">
             <CardTitle>Summary</CardTitle>
@@ -390,12 +401,15 @@ export default function NotePage() {
             )}
           </CardContent>
         </Card>
-        {editMode && (
-          <div className="flex gap-2 justify-end mb-8">
-            <Button variant="outline" onClick={() => setEditMode(false)} disabled={isSaving}>Cancel</Button>
-            <Button onClick={saveEdit} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
-          </div>
-        )}
+       
+        <div className="flex gap-2 justify-end mb-8" style={{ minHeight: 48 }}>
+          {editMode ? (
+            <>
+              <Button variant="outline" onClick={() => setEditMode(false)} disabled={isSaving}>Cancel</Button>
+              <Button onClick={saveEdit} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
+            </>
+          ) : null}
+        </div>
         {/* Quiz Card UI */}
         <div
           role="button"
