@@ -5,6 +5,9 @@ import ClientProviders from '@/components/ClientProviders'
 export const metadata = {
   title: 'LectureSync AI',
   description: 'The future of taking notes',
+  icons: {
+    icon: '/favicon.ico',
+  },
 }
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
