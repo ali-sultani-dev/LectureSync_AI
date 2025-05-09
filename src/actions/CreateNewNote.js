@@ -1,6 +1,6 @@
 'use server'
 
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 
 import { transcribeAudio } from './transcribe'
 import { generateTitleFromTranscript } from './generateTitleFromTranscript'
@@ -12,7 +12,10 @@ export async function CreateNewNote({ file }) {
   }
 
   const cookieHeader = (await cookies()).toString()
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+  // Dynamically construct base URL for server-side fetch
+  const host = headers().get('host')
+  const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https'
+  const baseUrl = `${protocol}://${host}`
 
   //   Upload media
   const mfd = new FormData()
