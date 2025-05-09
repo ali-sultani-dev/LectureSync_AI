@@ -1,4 +1,5 @@
 import type { CollectionConfig } from 'payload'
+import payload from 'payload'
 
 export const Notes: CollectionConfig = {
   slug: 'notes',
@@ -103,4 +104,19 @@ export const Notes: CollectionConfig = {
     },
   ],
   timestamps: true,
+  hooks: {
+    afterDelete: [
+      async ({ doc, req }) => {
+        if (doc.audioFile) {
+          const mediaId = typeof doc.audioFile === 'object' ? doc.audioFile.id : doc.audioFile
+          if (mediaId) {
+            await req.payload.delete({
+              collection: 'media',
+              id: mediaId,
+            })
+          }
+        }
+      },
+    ],
+  },
 }
