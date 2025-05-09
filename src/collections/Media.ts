@@ -15,33 +15,31 @@ export const Media: CollectionConfig = {
       }
       return false
     },
-    // Only allow updating if admin or owner
-    update: (args: any) => {
-      const { req, doc } = args
+    // Only admins or owner can update
+    update: ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
-      if (
-        req.user &&
-        doc &&
-        doc.owner &&
-        req.user.id === (typeof doc.owner === 'object' ? doc.owner.id : doc.owner)
-      )
-        return true
+      if (req.user) {
+        return {
+          owner: {
+            equals: req.user.id,
+          },
+        }
+      }
       return false
     },
-    // Only allow deleting if admin or owner
-    delete: (args: any) => {
-      const { req, doc } = args
+    // Only admins or owner can delete
+    delete: ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
-      if (
-        req.user &&
-        doc &&
-        doc.owner &&
-        req.user.id === (typeof doc.owner === 'object' ? doc.owner.id : doc.owner)
-      )
-        return true
+      if (req.user) {
+        return {
+          owner: {
+            equals: req.user.id,
+          },
+        }
+      }
       return false
     },
-    // Only allow creating if logged in (and set owner to self)
+    // Only logged-in users can create
     create: ({ req }) => !!req.user,
   },
   fields: [
