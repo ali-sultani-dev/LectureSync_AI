@@ -51,27 +51,31 @@ export default function QuizPage() {
     async function fetchQuiz() {
       try {
         let quizNote = note;
-
+        // Fallback: fetch note by ID if not in store (e.g., direct navigation)
         if (!quizNote && id) {
           const res = await fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            quizNote = data.doc;
-            setQuizNote(quizNote);
+          if (!res.ok) {
+            throw new Error('Failed to fetch note');
           }
+          const data = await res.json();
+          quizNote = data;
+          setQuizNote(quizNote);
         }
-        // hardcoded transcript for demo
-        let transcript = quizNote ? extractTextFromLexical(quizNote.transcript) : '';
-        let summary = quizNote ? extractTextFromLexical(quizNote.summary) : '';
-        if (!transcript && !summary) {
-          transcript = 'Photosynthesis is the process by which green plants and some other organisms use sunlight to synthesize foods from carbon dioxide and water. Photosynthesis in plants generally involves the green pigment chlorophyll and generates oxygen as a by-product.';
+        if (!quizNote) {
+          throw new Error('No note data found. Please return to the note page.');
         }
+        const transcript = extractTextFromLexical(quizNote.transcript);
+        const summary = extractTextFromLexical(quizNote.summary);
         const quizInput = transcript.length > 40 ? transcript : summary;
-        if (!quizInput) throw new Error('No transcript or summary found for this note');
-        // Improved prompt for more reliable JSON output
-        const prompt = `Create a quiz with 5 multiple-choice questions based on the following transcript. Each question should have 4 options. Format as JSON: [{"question":"...","options":["...","...","...","..."],"answer":1}, ...] where "answer" is the index (0-3) of the correct option in the "options" array.\n\nTranscript:\n${quizInput}`;
+        if (!quizInput) {
+          throw new Error('No transcript or summary found for this note');
+        }
+        if (quizInput.length < 50) {
+          throw new Error('Not enough content to generate a quiz. Please record a longer or more detailed note.');
+        }
+        // Improved prompt for more reliable and challenging questions
+        const prompt = `Create a quiz with 5 challenging multiple-choice questions based on the following transcript. Each question should require careful thought and understanding, and have 4 plausible options (with only one correct answer). Format as JSON: [{"question":"...","options":["...","...","...","..."],"answer":1}, ...] where "answer" is the index (0-3) of the correct option in the "options" array.\n\nTranscript:\n${quizInput}`;
         const aiResponse = await generateQuizFromNote(quizInput, prompt);
-        console.log('AI response:', aiResponse);
         const text = aiResponse?.text || aiResponse?.output || aiResponse;
         let quizArr;
         try {
@@ -92,12 +96,11 @@ export default function QuizPage() {
           }
           quizArr = typeof cleanText === 'string' ? JSON.parse(cleanText) : cleanText;
           if (!Array.isArray(quizArr)) throw new Error('Quiz is not an array');
-        //   check for required fields
+          // Defensive: check for required fields
           if (!quizArr.every(q => q.question && Array.isArray(q.options) && typeof q.answer === 'number')) {
             throw new Error('Quiz format invalid. Each question must have question, options, and answer fields, and answer must be a number (index).');
           }
         } catch (e) {
-          console.error('Failed to parse AI quiz response:', text);
           setError('Failed to parse quiz from AI. Here is the raw response:');
           setQuiz(text);
           return;
