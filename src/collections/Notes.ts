@@ -8,7 +8,7 @@ export const Notes: CollectionConfig = {
     // no access here admin UI control by top level access
   },
   access: {
-    // admin read all user only own
+    // Only admin or owner can read
     read: ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
       if (req.user) {
@@ -20,27 +20,32 @@ export const Notes: CollectionConfig = {
       }
       return false
     },
-    // update if admin or owner
-    update: (args: any) => {
-      const { req, doc } = args
+    // Only admin or owner can update
+    update: ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
-      if (
-        req.user &&
-        doc &&
-        doc.owner &&
-        req.user.id === (typeof doc.owner === 'object' ? doc.owner.id : doc.owner)
-      )
-        return true
+      if (req.user) {
+        return {
+          owner: {
+            equals: req.user.id,
+          },
+        }
+      }
       return false
     },
-    // delete: allow any logged-in user
-    delete: (args: any) => {
-      const { req } = args
-      return !!req.user
+    // Only admin or owner can delete
+    delete: ({ req }) => {
+      if (req.user && (req.user as any).role === 'admin') return true
+      if (req.user) {
+        return {
+          owner: {
+            equals: req.user.id,
+          },
+        }
+      }
+      return false
     },
-    // create only if login owner is you
-    create: (args: any) => {
-      const { req } = args
+    // Only logged-in users can create
+    create: ({ req }) => {
       return !!req.user
     },
   },
