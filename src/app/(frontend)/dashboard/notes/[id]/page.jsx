@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical } from 'lucide-react'
+import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
@@ -15,13 +15,26 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronsUpDown } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { NoteAIChat } from '@/components/note-ai-chat'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 
-// Helper to format seconds as mm:ss
-function formatTime(seconds) {
-  if (!isFinite(seconds) || isNaN(seconds) || seconds < 0) return '00:00'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  // Cleanup function 
+const forceCleanup = () => {
+  document.body.style.pointerEvents = 'auto'
+  document.body.style.overflow = 'auto'
+  const overlays = document.querySelectorAll('[data-radix-portal]')
+  overlays.forEach(overlay => {
+    if (overlay.children.length === 0) {
+      overlay.remove()
+    }
+  })
 }
 
 // Helper: Recursively extract all text from Lexical rich text
@@ -52,6 +65,7 @@ export default function NotePage() {
   const summaryTextareaRef = useRef(null)
   const transcriptTextareaRef = useRef(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isAIChatDialogOpen, setIsAIChatDialogOpen] = useState(false)
 
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
@@ -251,6 +265,30 @@ export default function NotePage() {
     <div className="flex min-h-screen flex-col items-center justify-center p-6 pt-10 pb-24">
       <div className="w-full max-w-4xl">
         <div className="mb-4 flex gap-2 justify-end items-center">
+        <Dialog open={isAIChatDialogOpen} onOpenChange={(open) => {
+              setIsAIChatDialogOpen(open)
+              if (!open) setTimeout(forceCleanup, 50)
+            }}>
+              <DialogTrigger asChild>
+                <Button variant="default" size="sm" className="gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-md">
+                  <Sparkles className="h-4 w-4" />
+                  Ask AI
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="!max-w-[90vw] !w-[90vw] sm:!max-w-[90vw] md:!max-w-[90vw] lg:!max-w-[90vw] !h-[80vh] p-0 gap-0 overflow-hidden">
+                <DialogHeader className="px-6 py-4 border-b">
+                  <DialogTitle className="text-xl font-semibold">
+                    AI Chat
+                  </DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    Ask questions about "{note?.title}"
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex-1 overflow-hidden h-full">
+                  <NoteAIChat noteId={parseInt(id)} noteTitle={note?.title || 'Untitled Note'} />
+                </div>
+              </DialogContent>
+            </Dialog>
           <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
             {isDownloading ? 'Downloading...' : 'Download'}
           </Button>

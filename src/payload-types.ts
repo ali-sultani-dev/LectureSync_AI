@@ -70,6 +70,7 @@ export interface Config {
     users: User;
     media: Media;
     notes: Note;
+    chats: Chat;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
     'payload-migrations': PayloadMigration;
@@ -79,6 +80,7 @@ export interface Config {
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     notes: NotesSelect<false> | NotesSelect<true>;
+    chats: ChatsSelect<false> | ChatsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
     'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
@@ -211,6 +213,43 @@ export interface Note {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "chats".
+ */
+export interface Chat {
+  id: number;
+  /**
+   * Title of the chat conversation
+   */
+  title: string;
+  /**
+   * The note this chat is about
+   */
+  noteId: number | Note;
+  /**
+   * Chat messages in this conversation
+   */
+  messages?:
+    | {
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+        timestamp: string;
+        /**
+         * Notes that were referenced in this message
+         */
+        relatedNotes?: (number | Note)[] | null;
+        id?: string | null;
+      }[]
+    | null;
+  owner?: (number | null) | User;
+  /**
+   * Whether this chat is currently active
+   */
+  isActive?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-locked-documents".
  */
 export interface PayloadLockedDocument {
@@ -227,6 +266,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'notes';
         value: number | Note;
+      } | null)
+    | ({
+        relationTo: 'chats';
+        value: number | Chat;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -317,6 +360,27 @@ export interface NotesSelect<T extends boolean = true> {
   transcript?: T;
   summary?: T;
   owner?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "chats_select".
+ */
+export interface ChatsSelect<T extends boolean = true> {
+  title?: T;
+  noteId?: T;
+  messages?:
+    | T
+    | {
+        role?: T;
+        content?: T;
+        timestamp?: T;
+        relatedNotes?: T;
+        id?: T;
+      };
+  owner?: T;
+  isActive?: T;
   updatedAt?: T;
   createdAt?: T;
 }
