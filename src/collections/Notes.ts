@@ -1,37 +1,93 @@
 import type { CollectionConfig } from 'payload'
-import payload from 'payload'
 
 export const Notes: CollectionConfig = {
   slug: 'notes',
   admin: {
     useAsTitle: 'title',
-    defaultColumns: ['title', 'createdAt', 'owner', 'updatedAt'],
+    defaultColumns: ['title', 'category', 'createdAt', 'owner', 'updatedAt'],
     // no access here admin UI control by top level access
   },
   access: {
-    // Only admin or owner can read
-    read: ({ req }) => {
+    // Custom read access to include shared notes
+    read: async ({ req }) => {
       if (req.user && (req.user as any).role === 'admin') return true
-      if (req.user) {
-        return {
-          owner: {
-            equals: req.user.id,
-          },
+      if (!req.user) return false
+
+      // Get all notes where user is owner or has shared access
+      const userNotes = await req.payload.find({
+        collection: 'notes',
+        where: {
+          or: [
+            {
+              owner: {
+                equals: req.user.id,
+              },
+            },
+          ],
+        },
+        limit: 0, // Get all
+      })
+
+      // Also get notes shared with this user
+      const allNotes = await req.payload.find({
+        collection: 'notes',
+        limit: 0,
+      })
+
+      const accessibleNoteIds = new Set<number>()
+
+      // Add owned notes
+      userNotes.docs.forEach((note) => accessibleNoteIds.add(note.id))
+
+      // Add shared notes
+      allNotes.docs.forEach((note) => {
+        if (note.sharedWith && Array.isArray(note.sharedWith)) {
+          const hasAccess = note.sharedWith.some((share: any) => {
+            const userId = typeof share.user === 'object' ? share.user.id : share.user
+            return userId === req.user!.id
+          })
+          if (hasAccess) {
+            accessibleNoteIds.add(note.id)
+          }
         }
+      })
+
+      return {
+        id: {
+          in: Array.from(accessibleNoteIds),
+        },
       }
-      return false
     },
-    // Only admin or owner can update
-    update: ({ req }) => {
+    // Custom update access
+    update: async ({ req, id }) => {
       if (req.user && (req.user as any).role === 'admin') return true
-      if (req.user) {
-        return {
-          owner: {
-            equals: req.user.id,
-          },
+      if (!req.user || !id) return false
+
+      try {
+        const note = await req.payload.findByID({
+          collection: 'notes',
+          id,
+        })
+
+        // Check if user is owner
+        const ownerId = typeof note.owner === 'object' ? note.owner?.id : note.owner
+        if (ownerId === req.user.id) {
+          return true
         }
+
+        // Check if user has edit permission
+        if (note.sharedWith && Array.isArray(note.sharedWith)) {
+          const hasEditPermission = note.sharedWith.some((share: any) => {
+            const userId = typeof share.user === 'object' ? share.user.id : share.user
+            return userId === req.user!.id && share.permission === 'edit'
+          })
+          return hasEditPermission
+        }
+
+        return false
+      } catch {
+        return false
       }
-      return false
     },
     // Only admin or owner can delete
     delete: ({ req }) => {
@@ -52,12 +108,43 @@ export const Notes: CollectionConfig = {
   },
   fields: [
     {
+      name: 'pinned',
+      type: 'checkbox',
+      label: 'Pinned',
+      defaultValue: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Pin this note to show at the top of your list.'
+      },
+    },
+    {
       name: 'title',
       type: 'text',
       required: true,
       label: 'Title',
       admin: {
         description: 'main title for note',
+      },
+    },
+    {
+      name: 'category',
+      type: 'relationship',
+      relationTo: 'categories',
+      hasMany: false,
+      label: 'Category',
+      admin: {
+        description: 'Organize your note by category',
+        position: 'sidebar',
+      },
+      filterOptions: ({ user }) => {
+        if (user) {
+          return {
+            owner: {
+              equals: user.id,
+            },
+          }
+        }
+        return false
       },
     },
     {
@@ -90,6 +177,41 @@ export const Notes: CollectionConfig = {
       },
     },
     {
+      name: 'sharedWith',
+      type: 'array',
+      label: 'Shared With',
+      admin: {
+        description: 'Users who have access to this note',
+        position: 'sidebar',
+      },
+      fields: [
+        {
+          name: 'user',
+          type: 'relationship',
+          relationTo: 'users',
+          required: true,
+          label: 'User',
+        },
+        {
+          name: 'permission',
+          type: 'select',
+          required: true,
+          label: 'Permission',
+          options: [
+            {
+              label: 'View Only',
+              value: 'view',
+            },
+            {
+              label: 'Edit',
+              value: 'edit',
+            },
+          ],
+          defaultValue: 'view',
+        },
+      ],
+    },
+    {
       name: 'owner',
       type: 'relationship',
       relationTo: 'users',
@@ -100,6 +222,28 @@ export const Notes: CollectionConfig = {
         position: 'sidebar',
         readOnly: true,
         condition: (data) => Boolean(data?.owner),
+      },
+    },
+    {
+      name: 'userNotes',
+      type: 'array',
+      label: 'User Notes',
+      fields: [
+        {
+          name: 'user',
+          type: 'relationship',
+          relationTo: 'users',
+          required: true,
+          index: true,
+        },
+        {
+          name: 'content',
+          type: 'richText',
+          required: false,
+        },
+      ],
+      admin: {
+        description: 'Personal notes for each user on this note',
       },
     },
   ],

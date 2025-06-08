@@ -2,8 +2,7 @@
 
 import * as React from 'react'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
-
-import { Button } from '@/components/ui/button'
+import { Pin } from 'lucide-react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 
 import { NavMain } from '@/components/nav-main'
@@ -115,6 +114,13 @@ function NavUserNotes() {
                         <span className="truncate block w-full max-w-full">{note.title}</span>
                       </a>
                     </SidebarMenuButton>
+                    {/* Only show small pin icon if pinned */}
+                    {note.pinned && (
+                      <Pin
+                        className="h-3 w-3 text-yellow-500 ml-2 flex-shrink-0"
+                        aria-label="Pinned"
+                      />
+                    )}
                   </SidebarMenuItem>
                 ))}
               {hasNextPage && (
