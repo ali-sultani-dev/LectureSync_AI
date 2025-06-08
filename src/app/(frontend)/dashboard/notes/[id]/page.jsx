@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical, Sparkles } from 'lucide-react'
+import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical, Share, FolderOpen, Sparkles, Bot, Pin } from 'lucide-react'
 import { format } from 'date-fns'
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
@@ -15,7 +15,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronsUpDown } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { NoteAIChat } from '@/components/note-ai-chat'
+import { NoteSharing } from '@/components/note-sharing'
+import { NoteCategoryAssignment } from '@/components/note-category-assignment'
+import { NoteAIChat } from '@/components/ui/note-ai-chat'
 import {
   Dialog,
   DialogContent,
@@ -24,18 +26,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
+import { LexicalEditor } from '@/components/ui/lexical-editor'
 
-  // Cleanup function 
-const forceCleanup = () => {
-  document.body.style.pointerEvents = 'auto'
-  document.body.style.overflow = 'auto'
-  const overlays = document.querySelectorAll('[data-radix-portal]')
-  overlays.forEach(overlay => {
-    if (overlay.children.length === 0) {
-      overlay.remove()
-    }
-  })
-}
+// Helper to format seconds as mm:ss
+// function formatTime(seconds) {
+//   if (!isFinite(seconds) || isNaN(seconds) || seconds < 0) return '00:00'
+//   const m = Math.floor(seconds / 60)
+//   const s = Math.floor(seconds % 60)
+//   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+// }
 
 // Helper: Recursively extract all text from Lexical rich text
 function extractLexicalText(node) {
@@ -45,6 +45,13 @@ function extractLexicalText(node) {
     return node.children.map(extractLexicalText).join(' ')
   }
   return ''
+}
+
+async function fetchCurrentUser() {
+  const res = await fetch('/api/users/me', { credentials: 'include' })
+  if (!res.ok) throw new Error('Not authenticated')
+  const data = await res.json()
+  return data.user
 }
 
 export default function NotePage() {
@@ -65,7 +72,24 @@ export default function NotePage() {
   const summaryTextareaRef = useRef(null)
   const transcriptTextareaRef = useRef(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false)
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
   const [isAIChatDialogOpen, setIsAIChatDialogOpen] = useState(false)
+  const [userNoteContent, setUserNoteContent] = useState(null)
+  const [isSavingUserNote, setIsSavingUserNote] = useState(false)
+
+  // Global cleanup function to ensure page remains interactive
+  const forceCleanup = () => {
+    document.body.style.pointerEvents = 'auto'
+    document.body.style.overflow = 'auto'
+    // Remove any potential overlay elements
+    const overlays = document.querySelectorAll('[data-radix-portal]')
+    overlays.forEach(overlay => {
+      if (overlay.children.length === 0) {
+        overlay.remove()
+      }
+    })
+  }
 
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
@@ -73,6 +97,41 @@ export default function NotePage() {
       fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' }).then((r) => r.json()),
     enabled: !!id,
   })
+
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: fetchCurrentUser,
+  })
+
+  // Check user permissions for this note
+  const getUserPermissions = () => {
+    if (!note || !currentUser) return { canEdit: false, canDelete: false, isOwner: false }
+    
+    // Check if user is the owner
+    const ownerId = typeof note.owner === 'object' ? note.owner?.id : note.owner
+    const isOwner = ownerId === currentUser.id
+    
+    if (isOwner) {
+      return { canEdit: true, canDelete: true, isOwner: true }
+    }
+    
+    // Check if note is shared with this user and their permission level
+    if (note.sharedWith && Array.isArray(note.sharedWith)) {
+      const userShare = note.sharedWith.find((share) => {
+        const sharedUserId = typeof share.user === 'object' ? share.user.id : share.user
+        return sharedUserId === currentUser.id
+      })
+      
+      if (userShare) {
+        const canEdit = userShare.permission === 'edit'
+        return { canEdit, canDelete: false, isOwner: false } // Shared users can never delete
+      }
+    }
+    
+    return { canEdit: false, canDelete: false, isOwner: false }
+  }
+
+  const { canEdit, canDelete, isOwner } = getUserPermissions()
 
   useEffect(() => {
     if (note && editMode) {
@@ -251,6 +310,70 @@ export default function NotePage() {
     }
   }
 
+  // Find the current user's note in the userNotes array
+  useEffect(() => {
+    if (note && currentUser) {
+      const entry = Array.isArray(note.userNotes)
+        ? note.userNotes.find((n) => {
+            const userId = typeof n.user === 'object' ? n.user.id : n.user
+            return userId === currentUser.id
+          })
+        : null
+      setUserNoteContent(entry?.content || null)
+    }
+  }, [note, currentUser])
+
+  // Save user note (debounced)
+  const debouncedSave = useRef(null)
+  const handleUserNoteChange = (editorState) => {
+    if (debouncedSave.current) clearTimeout(debouncedSave.current)
+    debouncedSave.current = setTimeout(() => {
+      editorState.read(() => {
+        const content = JSON.stringify(editorState.toJSON())
+        setIsSavingUserNote(true)
+        // Prepare new userNotes array
+        let newUserNotes = Array.isArray(note.userNotes) ? [...note.userNotes] : []
+        const idx = newUserNotes.findIndex((n) => {
+          const userId = typeof n.user === 'object' ? n.user.id : n.user
+          return userId === currentUser.id
+        })
+        if (idx !== -1) {
+          newUserNotes[idx] = { ...newUserNotes[idx], content }
+        } else {
+          newUserNotes.push({ user: currentUser.id, content })
+        }
+        fetch(`/api/notes/${id}`,
+          {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userNotes: newUserNotes }),
+          }
+        ).then(() => {
+          setIsSavingUserNote(false)
+        })
+      })
+    }, 1000)
+  }
+
+  // Cleanup effect to ensure page remains interactive
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      // If clicking outside dialogs and they're not open, force cleanup
+      if (!isShareDialogOpen && !isCategoryDialogOpen && !isAIChatDialogOpen) {
+        forceCleanup()
+      }
+    }
+
+    document.addEventListener('click', handleGlobalClick)
+    
+    // Cleanup on unmount
+    return () => {
+      document.removeEventListener('click', handleGlobalClick)
+      forceCleanup()
+    }
+  }, [isShareDialogOpen, isCategoryDialogOpen, isAIChatDialogOpen])
+
   if (isLoading) return <div>Loading…</div>
   if (isError || !note || !note.id) {
     return (
@@ -262,10 +385,46 @@ export default function NotePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6 pt-10 pb-24">
-      <div className="w-full max-w-4xl">
-        <div className="mb-4 flex gap-2 justify-end items-center">
-        <Dialog open={isAIChatDialogOpen} onOpenChange={(open) => {
+    <>
+      {!isOwner && (
+        <div className="w-full -mt -px bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-l-4 border-blue-500">
+          <div className="max-w-6xl mx-auto px-6 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Share className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Shared with you
+                  </span>
+                </div>
+                <div className="hidden sm:block w-px h-4 bg-blue-300 dark:bg-blue-700" />
+                <span className="hidden sm:inline text-xs text-blue-700 dark:text-blue-300">
+                  {canEdit ? 'You can edit this note' : 'View-only access'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${canEdit ? 'bg-green-500' : 'bg-amber-500'}`} />
+                <span className="text-xs font-medium text-blue-800 dark:text-blue-200 uppercase tracking-wide">
+                  {canEdit ? 'Edit' : 'View'}
+                </span>
+              </div>
+            </div>
+            <div className="sm:hidden mt-1">
+              <span className="text-xs text-blue-700 dark:text-blue-300">
+                {canEdit ? 'You can edit this note' : 'View-only access'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+      
+ <div className="flex min-h-screen flex-col items-center justify-center">
+        <div className="w-full max-w-6xl px-4 sm:px-6 md:px-8 pt-16 pb-24">
+          <div
+            className="mb-8 flex gap-2 items-center overflow-x-auto overflow-hidden scrollbar-hide whitespace-nowrap max-w-full pl-6 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent justify-start md:justify-end"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <Dialog open={isAIChatDialogOpen} onOpenChange={(open) => {
               setIsAIChatDialogOpen(open)
               if (!open) setTimeout(forceCleanup, 50)
             }}>
@@ -289,190 +448,348 @@ export default function NotePage() {
                 </div>
               </DialogContent>
             </Dialog>
-          <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
-            {isDownloading ? 'Downloading...' : 'Download'}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 p-0 flex items-center justify-center align-middle"><MoreVertical /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setEditMode(true)}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={deleteNote} className="text-red-600">{isDeleting ? 'Deleting...' : 'Delete'}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="mb-8 flex flex-col items-start">
-          {editMode ? (
-            <div className="w-full border-2 border-primary rounded mb-2">
-              <Input
-                className="text-xl md:text-2xl font-bold break-words w-full text-left bg-transparent box-border transition-all leading-tight p-0 m-0 border-0 focus:ring-0 focus:outline-none shadow-none"
-                style={{ minHeight: 'unset', height: 'auto', marginBottom: 0 }}
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-              />
-            </div>
-          ) : (
-            <h1 className="text-xl md:text-2xl font-bold break-words w-full text-left m-0">
-              {note.title}
-            </h1>
-          )}
-          <p className="text-sm text-muted-foreground mt-1 text-left">
-            {note?.createdAt && !isNaN(new Date(note.createdAt))
-              ? format(new Date(note.createdAt), 'EEEE, MMMM d, yyyy')
-              : 'Unknown date'}
-          </p>
-        </div>
-      
-        <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
-          <CardContent>
-            <audio
-              ref={audioRef}
-              src={note.audioFile?.url || undefined}
-              preload="metadata"
-              disabled={!note.audioFile?.url}
-              key={note.audioFile?.url || 'no-audio'}
-            />
-            <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={togglePlayback}
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-md"
+              onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
+            >
+              <HelpCircle className="h-4 w-4" />
+              Quiz
+            </Button>
+            {isOwner && (
+              <Dialog open={isShareDialogOpen} onOpenChange={(open) => {
+                setIsShareDialogOpen(open)
+                if (!open) setTimeout(forceCleanup, 50)
+              }}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-md"
+                  >
+                    <Share className="h-4 w-4 mr-2" />
+                    Share
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Share Note</DialogTitle>
+                    <DialogDescription>
+                      Manage who can access this note and their permissions.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <NoteSharing note={note} currentUser={currentUser} />
+                </DialogContent>
+              </Dialog>
+            )}
+            <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
+              {isDownloading ? 'Downloading...' : 'Download'}
+            </Button>
+            {(canEdit || canDelete || isOwner || !isOwner) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 p-0 flex items-center justify-center align-middle">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {/* Pin/Unpin menu item (editors/owners only) */}
+                  {canEdit && (
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        // Pin or unpin logic
+                        try {
+                          await fetch(`/api/notes/${note.id}`, {
+                            method: 'PATCH',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ pinned: !note.pinned })
+                          })
+                          queryClient.invalidateQueries(['note', note.id])
+                          queryClient.invalidateQueries(['notes'])
+                        } catch {
+                          alert('Failed to update pin status')
+                        }
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Pin className="h-4 w-4" />
+                      {note.pinned ? 'Unpin from top' : 'Pin to top'}
+                    </DropdownMenuItem>
+                  )}
+                  {canEdit && (
+                    <DropdownMenuItem onClick={() => setEditMode(true)} className="flex items-center gap-2">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setIsCategoryDialogOpen(true)} className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4" />
+                    {isOwner ? 'Assign Category' : 'Add to My Categories'}
+                  </DropdownMenuItem>
+                  {canDelete && (
+                    <DropdownMenuItem onClick={deleteNote} className="flex items-center gap-2 text-red-600 focus:text-red-600">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+          <div className="h-4" />
+          <div className="mb-10 flex flex-col items-start">
+            {editMode && canEdit ? (
+              <div className="w-full border-2 border-primary rounded mb-2">
+                <Input
+                  className="text-xl md:text-2xl font-bold break-words w-full text-left bg-transparent box-border transition-all leading-tight p-0 m-0 border-0 focus:ring-0 focus:outline-none shadow-none"
+                  style={{ minHeight: 'unset', height: 'auto', marginBottom: 0 }}
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                />
+              </div>
+            ) : (
+              <h1 className="text-xl md:text-2xl font-bold break-words w-full text-left m-0">
+                {note.title}
+              </h1>
+            )}
+            <p className="text-sm text-muted-foreground mt-1 text-left">
+              {note?.createdAt && !isNaN(new Date(note.createdAt))
+                ? format(new Date(note.createdAt), 'EEEE, MMMM d, yyyy')
+                : 'Unknown date'}
+            </p>
+            {note.category && (
+              <div className="flex items-center gap-2 mt-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  note.category.color === 'blue' ? 'bg-blue-500' :
+                  note.category.color === 'green' ? 'bg-green-500' :
+                  note.category.color === 'red' ? 'bg-red-500' :
+                  note.category.color === 'yellow' ? 'bg-yellow-500' :
+                  note.category.color === 'purple' ? 'bg-purple-500' :
+                  note.category.color === 'pink' ? 'bg-pink-500' :
+                  note.category.color === 'indigo' ? 'bg-indigo-500' :
+                  note.category.color === 'gray' ? 'bg-gray-500' : 'bg-blue-500'
+                }`} />
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">{note.category.name}</span>
+              </div>
+            )}
+          </div>
+        
+          <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
+            <CardContent>
+              <audio
+                ref={audioRef}
+                src={note.audioFile?.url || undefined}
+                preload="metadata"
                 disabled={!note.audioFile?.url}
-              >
-                {isPlaying ? (
-                  <Pause className="h-4 w-4" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </Button>
-              <div className="flex-1">
-                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary"
-                    style={{
-                      width: duration
-                        ? `${(currentTime / duration) * 100}%`
-                        : '0%',
-                    }}
-                  />
+                key={note.audioFile?.url || 'no-audio'}
+              />
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-full"
+                  onClick={togglePlayback}
+                  disabled={!note.audioFile?.url}
+                >
+                  {isPlaying ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                </Button>
+                <div className="flex-1">
+                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary"
+                      style={{
+                        width: duration
+                          ? `${(currentTime / duration) * 100}%`
+                          : '0%',
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span>
+                    {Math.floor(currentTime / 60)}:
+                    {String(Math.floor(currentTime % 60)).padStart(2, '0')} /{' '}
+                    {Math.floor(duration / 60)}:
+                    {String(Math.floor(duration % 60)).padStart(2, '0')}
+                  </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                <span>
-                  {Math.floor(currentTime / 60)}:
-                  {String(Math.floor(currentTime % 60)).padStart(2, '0')} /{' '}
-                  {Math.floor(duration / 60)}:
-                  {String(Math.floor(duration % 60)).padStart(2, '0')}
-                </span>
-              </div>
-            </div>
-            {!note.audioFile?.url && (
-              <div className="text-muted-foreground text-center mt-2 text-sm">No audio to play for this note.</div>
-            )}
-          </CardContent>
-          <CardFooter className="px-2 -mb-3.5">
-            <Collapsible
-              open={isOpen}
-              onOpenChange={setIsOpen}
-              className="w-full space-y-2"
-            >
-              <div className="flex items-center space-x-4 px-4">
-                <h4 className="text-sm font-semibold">Transcript</h4>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <ChevronsUpDown className="h-4 w-4" />
-                    <span className="sr-only">Toggle</span>
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent>
-                <Card className={`shadow-none${editMode ? ' border-2 border-primary' : ''}`}>
-                  <CardHeader>
-                    <CardTitle>Transcript</CardTitle>
-                    <CardDescription>
-                      Full lecture transcript
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {editMode ? (
-                      <textarea
-                        ref={transcriptTextareaRef}
-                        value={editTranscript}
-                        onChange={e => setEditTranscript(e.target.value)}
-                        className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
-                        style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
-                        rows={1}
-                        spellCheck={true}
-                      />
-                    ) : note.transcript ? (
-                      <RichText data={note.transcript} />
-                    ) : (
-                      <div className="text-muted-foreground">No transcript available for this note.</div>
-                    )}
-                  </CardContent>
-                </Card>
-              </CollapsibleContent>
-            </Collapsible>
-          </CardFooter>
-        </Card>
-        <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
-          <CardHeader className="pb-3">
-            <CardTitle>Summary</CardTitle>
-            <CardDescription>AI-generated summary</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {editMode ? (
-              <textarea
-                ref={summaryTextareaRef}
-                value={editSummary}
-                onChange={e => setEditSummary(e.target.value)}
-                className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
-                style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
-                rows={1}
-                spellCheck={true}
-              />
-            ) : (
-              <RichText data={note.summary} />
-            )}
-          </CardContent>
-        </Card>
-       
-        <div className="flex gap-2 justify-end mb-8" style={{ minHeight: 48 }}>
-          {editMode ? (
-            <>
-              <Button variant="outline" onClick={() => setEditMode(false)} disabled={isSaving}>Cancel</Button>
-              <Button onClick={saveEdit} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
-            </>
-          ) : null}
-        </div>
-        {/* Quiz Card UI */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label="Take a Quiz on this Note"
-          className="mb-8 outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer group"
-          onClick={() => router.push(`/dashboard/notes/${id}/quiz`)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              router.push(`/dashboard/notes/${id}/quiz`)
-            }
-          }}
-        >
-          <Card className="mb-6 shadow-none border-2 border-muted transition-shadow group-hover:border-primary w-full">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HelpCircle className="w-6 h-6 text-primary" />
-                Quiz Yourself
-                <ArrowUpRight className="w-5 h-5 ml-auto text-primary opacity-80 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-              </CardTitle>
-              <CardDescription>Test your understanding of this note with an AI-generated quiz.</CardDescription>
-            </CardHeader>
+              {!note.audioFile?.url && (
+                <div className="text-muted-foreground text-center mt-2 text-sm">No audio to play for this note.</div>
+              )}
+            </CardContent>
+            <CardFooter className="px-2 -mb-3.5">
+              <Collapsible
+                open={isOpen}
+                onOpenChange={setIsOpen}
+                className="w-full space-y-2"
+              >
+                <div className="flex items-center space-x-4 px-4">
+                  <h4 className="text-sm font-semibold">Transcript</h4>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      <ChevronsUpDown className="h-4 w-4" />
+                      <span className="sr-only">Toggle</span>
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent>
+                  <Card className={`shadow-none${editMode ? ' border-2 border-primary' : ''}`}>
+                    <CardHeader>
+                      <CardTitle>Transcript</CardTitle>
+                      <CardDescription>
+                        Full lecture transcript
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {editMode && canEdit ? (
+                        <textarea
+                          ref={transcriptTextareaRef}
+                          value={editTranscript}
+                          onChange={e => setEditTranscript(e.target.value)}
+                          className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
+                          style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
+                          rows={1}
+                          spellCheck={true}
+                        />
+                      ) : note.transcript ? (
+                        <RichText data={note.transcript} />
+                      ) : (
+                        <div className="text-muted-foreground">No transcript available for this note.</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardFooter>
           </Card>
+          <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-primary' : 'border-muted'}`}>
+            <CardHeader className="pb-3">
+              <CardTitle>Summary</CardTitle>
+              <CardDescription>AI-generated summary</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {editMode && canEdit ? (
+                <textarea
+                  ref={summaryTextareaRef}
+                  value={editSummary}
+                  onChange={e => setEditSummary(e.target.value)}
+                  className="w-full text-sm md:text-base font-normal leading-tight bg-transparent box-border transition-all p-0 m-0 min-h-0 resize-none"
+                  style={{ minHeight: 0, outline: 'none', overflow: 'hidden' }}
+                  rows={1}
+                  spellCheck={true}
+                />
+              ) : (
+                <RichText data={note.summary} />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Personal Notes Section */}
+          <Card className={`mb-6 shadow-none border-2 ${editMode ? 'border-black' : 'border-muted'}`}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                My Notes
+              </CardTitle>
+              <CardDescription>
+                Add your own notes, thoughts, and insights about this content
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {currentUser ? (
+                <div className="relative">
+                  {!editMode && (
+                    userNoteContent ? (
+                      <RichText data={typeof userNoteContent === 'string' ? JSON.parse(userNoteContent) : userNoteContent} />
+                    ) : (
+                      <div className="text-muted-foreground">No personal notes yet.</div>
+                    )
+                  )}
+                  {editMode && (
+                    <LexicalEditor
+                      placeholder="Write your personal notes here... Use the toolbar for formatting options."
+                      onChange={handleUserNoteChange}
+                      initialValue={userNoteContent ? (typeof userNoteContent === 'string' ? JSON.parse(userNoteContent) : userNoteContent) : null}
+                      className="border-0 rounded-none"
+                    />
+                  )}
+                  {editMode && isSavingUserNote && (
+                    <div className="absolute top-2 right-2 text-xs text-muted-foreground bg-background px-2 py-1 rounded shadow-sm border">
+                      Saving...
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="min-h-[200px] flex items-center justify-center text-muted-foreground">
+                  Loading your notes...
+                </div>
+              )}
+            </CardContent>
+          </Card>
+         
+          <div className="flex gap-2 justify-end mb-8" style={{ minHeight: 48 }}>
+            {editMode && canEdit ? (
+              <>
+                <Button variant="outline" onClick={() => setEditMode(false)} disabled={isSaving}>Cancel</Button>
+                <Button onClick={saveEdit} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
+              </>
+            ) : null}
+          </div>
+          {/* Quiz Card UI */}
+          {/* (Delete the block that starts with: <div role="button" ...> ... </div> for the quiz card) */}
+
+          {/* Category Assignment Dialog */}
+          <Dialog 
+            open={isCategoryDialogOpen} 
+            onOpenChange={(open) => {
+              setIsCategoryDialogOpen(open)
+              // Force cleanup when dialog closes
+              if (!open) {
+                setTimeout(forceCleanup, 50)
+              }
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>
+                  {isOwner ? 'Assign Category' : 'Add to My Categories'}
+                </DialogTitle>
+                <DialogDescription>
+                  {isOwner 
+                    ? 'Organize this note by assigning it to a category.'
+                    : 'Add this shared note to one of your personal categories for better organization.'
+                  }
+                </DialogDescription>
+              </DialogHeader>
+              <NoteCategoryAssignment 
+                note={note} 
+                currentUser={currentUser}
+                isOwner={isOwner}
+                onClose={() => {
+                  setIsCategoryDialogOpen(false)
+                  // Force cleanup
+                  setTimeout(forceCleanup, 50)
+                }} 
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
-    </div>
+    </>
   )
 }

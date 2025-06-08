@@ -70,6 +70,7 @@ export interface Config {
     users: User;
     media: Media;
     notes: Note;
+    categories: Category;
     chats: Chat;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -80,6 +81,7 @@ export interface Config {
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     notes: NotesSelect<false> | NotesSelect<true>;
+    categories: CategoriesSelect<false> | CategoriesSelect<true>;
     chats: ChatsSelect<false> | ChatsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -213,6 +215,28 @@ export interface Note {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "categories".
+ */
+export interface Category {
+  id: number;
+  /**
+   * Name of the category
+   */
+  name: string;
+  /**
+   * Optional description for the category
+   */
+  description?: string | null;
+  /**
+   * Color theme for the category
+   */
+  color?: ('blue' | 'green' | 'red' | 'yellow' | 'purple' | 'pink' | 'indigo' | 'gray') | null;
+  owner?: (number | null) | User;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "chats".
  */
 export interface Chat {
@@ -266,6 +290,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'notes';
         value: number | Note;
+      } | null)
+    | ({
+        relationTo: 'categories';
+        value: number | Category;
       } | null)
     | ({
         relationTo: 'chats';
@@ -359,6 +387,18 @@ export interface NotesSelect<T extends boolean = true> {
   audioFile?: T;
   transcript?: T;
   summary?: T;
+  owner?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "categories_select".
+ */
+export interface CategoriesSelect<T extends boolean = true> {
+  name?: T;
+  description?: T;
+  color?: T;
   owner?: T;
   updatedAt?: T;
   createdAt?: T;
