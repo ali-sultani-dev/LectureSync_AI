@@ -21,7 +21,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@headlessui/react": "^2.2.4",
-    "@payloadcms/db-sqlite": "3.33.0",
+    "@payloadcms/db-postgres": "^3.41.0",
     "@payloadcms/next": "3.33.0",
     "@payloadcms/payload-cloud": "3.33.0",
     "@payloadcms/richtext-lexical": "3.33.0",
