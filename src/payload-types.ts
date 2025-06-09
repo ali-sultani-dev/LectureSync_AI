@@ -147,6 +147,7 @@ export interface Media {
   id: number;
   alt: string;
   owner?: (number | null) | User;
+  prefix?: string | null;
   updatedAt: string;
   createdAt: string;
   url?: string | null;
@@ -166,9 +167,17 @@ export interface Media {
 export interface Note {
   id: number;
   /**
+   * Pin this note to show at the top of your list.
+   */
+  pinned?: boolean | null;
+  /**
    * main title for note
    */
   title: string;
+  /**
+   * Organize your note by category
+   */
+  category?: (number | null) | Category;
   /**
    * upload audio file if want
    */
@@ -209,7 +218,41 @@ export interface Note {
     };
     [k: string]: unknown;
   } | null;
+  /**
+   * Users who have access to this note
+   */
+  sharedWith?:
+    | {
+        user: number | User;
+        permission: 'view' | 'edit';
+        id?: string | null;
+      }[]
+    | null;
   owner?: (number | null) | User;
+  /**
+   * Personal notes for each user on this note
+   */
+  userNotes?:
+    | {
+        user: number | User;
+        content?: {
+          root: {
+            type: string;
+            children: {
+              type: string;
+              version: number;
+              [k: string]: unknown;
+            }[];
+            direction: ('ltr' | 'rtl') | null;
+            format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+            indent: number;
+            version: number;
+          };
+          [k: string]: unknown;
+        } | null;
+        id?: string | null;
+      }[]
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -366,6 +409,7 @@ export interface UsersSelect<T extends boolean = true> {
 export interface MediaSelect<T extends boolean = true> {
   alt?: T;
   owner?: T;
+  prefix?: T;
   updatedAt?: T;
   createdAt?: T;
   url?: T;
@@ -383,11 +427,27 @@ export interface MediaSelect<T extends boolean = true> {
  * via the `definition` "notes_select".
  */
 export interface NotesSelect<T extends boolean = true> {
+  pinned?: T;
   title?: T;
+  category?: T;
   audioFile?: T;
   transcript?: T;
   summary?: T;
+  sharedWith?:
+    | T
+    | {
+        user?: T;
+        permission?: T;
+        id?: T;
+      };
   owner?: T;
+  userNotes?:
+    | T
+    | {
+        user?: T;
+        content?: T;
+        id?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
 }
