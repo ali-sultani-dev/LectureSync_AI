@@ -131,6 +131,8 @@ export function NoteSharing({ note, currentUser }: NoteSharingProps) {
       setPermission('view')
       setIsDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['note', note.id] })
+      queryClient.invalidateQueries({ queryKey: ['sharedNotes'] })
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -157,6 +159,8 @@ export function NoteSharing({ note, currentUser }: NoteSharingProps) {
     onSuccess: () => {
       toast.success('Sharing removed successfully')
       queryClient.invalidateQueries({ queryKey: ['note', note.id] })
+      queryClient.invalidateQueries({ queryKey: ['sharedNotes'] })
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
     },
     onError: (error: Error) => {
       toast.error(error.message)

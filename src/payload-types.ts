@@ -167,9 +167,14 @@ export interface Media {
 export interface Note {
   id: number;
   /**
-   * Pin this note to show at the top of your list.
+   * Users who have pinned this note to show at the top of their list.
    */
-  pinned?: boolean | null;
+  pinnedBy?:
+    | {
+        user: number | User;
+        id?: string | null;
+      }[]
+    | null;
   /**
    * main title for note
    */
@@ -427,7 +432,12 @@ export interface MediaSelect<T extends boolean = true> {
  * via the `definition` "notes_select".
  */
 export interface NotesSelect<T extends boolean = true> {
-  pinned?: T;
+  pinnedBy?:
+    | T
+    | {
+        user?: T;
+        id?: T;
+      };
   title?: T;
   category?: T;
   audioFile?: T;

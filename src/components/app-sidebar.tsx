@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { Pin } from 'lucide-react'
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
 import { NavMain } from '@/components/nav-main'
 import { NavCategories } from '@/components/nav-categories'
@@ -25,6 +25,16 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 function NavUserNotes() {
   const [isCollapsed, setIsCollapsed] = React.useState(false)
+
+  // Get current user
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: async () => {
+      const res = await fetch('/api/users/me', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to fetch current user')
+      return res.json()
+    },
+  })
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
     useInfiniteQuery({
@@ -74,6 +84,15 @@ function NavUserNotes() {
 
   const notes = data?.pages.flatMap((page) => page.docs) ?? []
 
+  // Helper function to check if current user has pinned a note
+  const isNotePinnedByUser = (note: any) => {
+    if (!currentUser || !note.pinnedBy) return false
+    return note.pinnedBy.some((pin: any) => {
+      const userId = typeof pin.user === 'object' ? pin.user.id : pin.user
+      return userId === currentUser.id
+    })
+  }
+
   return (
     <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
       <SidebarGroup>
@@ -99,7 +118,7 @@ function NavUserNotes() {
               )}
               {notes
                 .slice() // avoid mutating array
-                .sort((a, b) => Number(b.pinned) - Number(a.pinned)) // pinned notes first
+                .sort((a, b) => Number(isNotePinnedByUser(b)) - Number(isNotePinnedByUser(a))) // user-pinned notes first
                 .map((note) => (
                   <SidebarMenuItem key={note.id} className="flex items-center justify-between">
                     <SidebarMenuButton
@@ -114,8 +133,8 @@ function NavUserNotes() {
                         <span className="truncate block w-full max-w-full">{note.title}</span>
                       </a>
                     </SidebarMenuButton>
-                    {/* Only show small pin icon if pinned */}
-                    {note.pinned && (
+                    {/* Only show small pin icon if current user has pinned it */}
+                    {isNotePinnedByUser(note) && (
                       <Pin
                         className="h-3 w-3 text-yellow-500 ml-2 flex-shrink-0"
                         aria-label="Pinned"

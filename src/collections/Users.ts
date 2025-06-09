@@ -11,9 +11,15 @@ export const Users: CollectionConfig = {
     read: ({ req, id }) => {
       // If admin, allow all
       if (req.user && (req.user as any).role === 'admin') return true
-      // If user, allow reading their own document
-      if (req.user && id && req.user.id === id) return true
-      return false
+
+      // If user is requesting a specific document (by id), only allow their own
+      if (id) {
+        return !!(req.user && req.user.id === id)
+      }
+
+      // If user is searching (no id), allow authenticated users to search for sharing
+      // This enables sharing functionality while maintaining privacy
+      return !!req.user
     },
     update: ({ req }) => !!(req.user && (req.user as any).role === 'admin'),
     delete: ({ req }) => !!(req.user && (req.user as any).role === 'admin'),

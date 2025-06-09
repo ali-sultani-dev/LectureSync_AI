@@ -94,7 +94,7 @@ export default function NotePage() {
   const { data: note, isLoading, isError } = useQuery({
     queryKey: ['note', id],
     queryFn: () =>
-      fetch(`/api/notes/${id}?depth=1`, { credentials: 'include' }).then((r) => r.json()),
+      fetch(`/api/notes/${id}?depth=2`, { credentials: 'include' }).then((r) => r.json()),
     enabled: !!id,
   })
 
@@ -105,17 +105,17 @@ export default function NotePage() {
 
   // Check user permissions for this note
   const getUserPermissions = () => {
-    if (!note || !currentUser) return { canEdit: false, canDelete: false, isOwner: false }
+    if (!note || !currentUser) return { canEdit: false, canDelete: false, isOwner: false, hasAccess: false }
     
     // Check if user is the owner
     const ownerId = typeof note.owner === 'object' ? note.owner?.id : note.owner
     const isOwner = ownerId === currentUser.id
     
     if (isOwner) {
-      return { canEdit: true, canDelete: true, isOwner: true }
+      return { canEdit: true, canDelete: true, isOwner: true, hasAccess: true }
     }
     
-    // Check if note is shared with this user and their permission level
+        // Check if note is shared with this user and their permission level
     if (note.sharedWith && Array.isArray(note.sharedWith)) {
       const userShare = note.sharedWith.find((share) => {
         const sharedUserId = typeof share.user === 'object' ? share.user.id : share.user
@@ -124,14 +124,26 @@ export default function NotePage() {
       
       if (userShare) {
         const canEdit = userShare.permission === 'edit'
-        return { canEdit, canDelete: false, isOwner: false } // Shared users can never delete
+        const hasAccess = true // User has either view or edit access
+        return { canEdit, canDelete: false, isOwner: false, hasAccess } // Shared users can never delete
       }
     }
-    
-    return { canEdit: false, canDelete: false, isOwner: false }
+
+    return { canEdit: false, canDelete: false, isOwner: false, hasAccess: false }
   }
 
-  const { canEdit, canDelete, isOwner } = getUserPermissions()
+  const { canEdit, canDelete, isOwner, hasAccess } = getUserPermissions()
+
+  // Check if current user has pinned this note
+  const isUserPinned = () => {
+    if (!note || !currentUser || !note.pinnedBy) return false
+    return note.pinnedBy.some((pin) => {
+      const userId = typeof pin.user === 'object' ? pin.user.id : pin.user
+      return userId === currentUser.id
+    })
+  }
+
+  const userHasPinned = isUserPinned()
 
   useEffect(() => {
     if (note && editMode) {
@@ -267,15 +279,29 @@ export default function NotePage() {
     if (!window.confirm('Are you sure you want to delete this note? This action cannot be undone.')) return
     setIsDeleting(true)
     try {
+      console.log('Attempting to delete note with ID:', id)
+      console.log('Current user:', currentUser)
+      console.log('Note owner:', note?.owner)
+      console.log('Can delete:', canDelete)
+      
       const res = await fetch(`/api/notes/${id}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
       })
-      if (!res.ok) throw new Error(await res.text())
+      
+      console.log('Delete response status:', res.status)
+      
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error('Delete error response:', errorText)
+        throw new Error(errorText)
+      }
+      
       queryClient.invalidateQueries(['notes'])
       router.push('/dashboard/notes/new')
     } catch (err) {
+      console.error('Delete error:', err)
       alert('Failed to delete note. ' + (err instanceof Error ? err.message : ''))
       setIsDeleting(false)
     }
@@ -486,7 +512,7 @@ export default function NotePage() {
             <Button variant="outline" size="sm" onClick={downloadNoteFiles} disabled={isDownloading}>
               {isDownloading ? 'Downloading...' : 'Download'}
             </Button>
-            {(canEdit || canDelete || isOwner || !isOwner) && (
+            {hasAccess && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-10 w-10 p-0 flex items-center justify-center align-middle">
@@ -494,17 +520,30 @@ export default function NotePage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  {/* Pin/Unpin menu item (editors/owners only) */}
-                  {canEdit && (
+                  {/* Pin/Unpin menu item (all users with access) */}
+                  {hasAccess && (
                     <DropdownMenuItem
                       onClick={async () => {
-                        // Pin or unpin logic
+                        // Pin or unpin logic for current user
                         try {
+                          let updatedPinnedBy = [...(note.pinnedBy || [])]
+                          
+                          if (userHasPinned) {
+                            // Remove current user from pinnedBy array
+                            updatedPinnedBy = updatedPinnedBy.filter((pin) => {
+                              const userId = typeof pin.user === 'object' ? pin.user.id : pin.user
+                              return userId !== currentUser.id
+                            })
+                          } else {
+                            // Add current user to pinnedBy array
+                            updatedPinnedBy.push({ user: currentUser.id })
+                          }
+                          
                           await fetch(`/api/notes/${note.id}`, {
                             method: 'PATCH',
                             credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ pinned: !note.pinned })
+                            body: JSON.stringify({ pinnedBy: updatedPinnedBy })
                           })
                           queryClient.invalidateQueries(['note', note.id])
                           queryClient.invalidateQueries(['notes'])
@@ -515,7 +554,7 @@ export default function NotePage() {
                       className="flex items-center gap-2"
                     >
                       <Pin className="h-4 w-4" />
-                      {note.pinned ? 'Unpin from top' : 'Pin to top'}
+                      {userHasPinned ? 'Unpin from top' : 'Pin to top'}
                     </DropdownMenuItem>
                   )}
                   {canEdit && (
@@ -526,10 +565,13 @@ export default function NotePage() {
                       Edit
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={() => setIsCategoryDialogOpen(true)} className="flex items-center gap-2">
-                    <FolderOpen className="h-4 w-4" />
-                    {isOwner ? 'Assign Category' : 'Add to My Categories'}
-                  </DropdownMenuItem>
+                  {/* Category assignment (owners only) */}
+                  {isOwner && (
+                    <DropdownMenuItem onClick={() => setIsCategoryDialogOpen(true)} className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4" />
+                      Assign Category
+                    </DropdownMenuItem>
+                  )}
                   {canDelete && (
                     <DropdownMenuItem onClick={deleteNote} className="flex items-center gap-2 text-red-600 focus:text-red-600">
                       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

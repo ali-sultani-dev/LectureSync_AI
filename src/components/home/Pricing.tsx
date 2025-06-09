@@ -15,7 +15,7 @@ const plans = [
     description: 'Get started with all core features. Perfect for students and professionals.',
     button: {
       label: 'Start for free',
-      href: '/register',
+      href: '/login',
     },
     features: [
       'Up to 30 notes per month',

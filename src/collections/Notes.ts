@@ -108,14 +108,22 @@ export const Notes: CollectionConfig = {
   },
   fields: [
     {
-      name: 'pinned',
-      type: 'checkbox',
-      label: 'Pinned',
-      defaultValue: false,
+      name: 'pinnedBy',
+      type: 'array',
+      label: 'Pinned By',
       admin: {
         position: 'sidebar',
-        description: 'Pin this note to show at the top of your list.'
+        description: 'Users who have pinned this note to show at the top of their list.',
       },
+      fields: [
+        {
+          name: 'user',
+          type: 'relationship',
+          relationTo: 'users',
+          required: true,
+          label: 'User',
+        },
+      ],
     },
     {
       name: 'title',
@@ -254,10 +262,21 @@ export const Notes: CollectionConfig = {
         if (doc.audioFile) {
           const mediaId = typeof doc.audioFile === 'object' ? doc.audioFile.id : doc.audioFile
           if (mediaId) {
-            await req.payload.delete({
-              collection: 'media',
-              id: mediaId,
-            })
+            try {
+              // Delete media file asynchronously without blocking the main transaction
+              setImmediate(async () => {
+                try {
+                  await req.payload.delete({
+                    collection: 'media',
+                    id: mediaId,
+                  })
+                } catch (error) {
+                  console.error('Failed to delete associated media file:', error)
+                }
+              })
+            } catch (error) {
+              console.error('Error scheduling media deletion:', error)
+            }
           }
         }
       },
