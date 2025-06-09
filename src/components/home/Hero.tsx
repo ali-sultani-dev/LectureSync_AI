@@ -6,7 +6,7 @@ import { Container } from '@/components/home/Container'
 import { PhoneFrame } from '@/components/home/PhoneFrame'
 
 function BackgroundIllustration(props: React.ComponentPropsWithoutRef<'div'>) {
-  let id = useId()
+  const id = useId()
 
   return (
     <div {...props}>
