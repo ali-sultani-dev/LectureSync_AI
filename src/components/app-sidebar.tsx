@@ -4,6 +4,8 @@ import * as React from 'react'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { Pin } from 'lucide-react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useNotePrefetch } from '@/hooks/use-note-prefetch'
+import Link from 'next/link'
 
 import { NavMain } from '@/components/nav-main'
 import { NavCategories } from '@/components/nav-categories'
@@ -25,8 +27,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 function NavUserNotes() {
   const [isCollapsed, setIsCollapsed] = React.useState(false)
+  const { prefetchNote } = useNotePrefetch()
 
-  // Get current user
+  // Get current user with optimized caching
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
@@ -34,6 +37,8 @@ function NavUserNotes() {
       if (!res.ok) throw new Error('Failed to fetch current user')
       return res.json()
     },
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
   })
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
@@ -53,6 +58,10 @@ function NavUserNotes() {
         return undefined
       },
       initialPageParam: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes - notes don't change often
+      gcTime: 10 * 60 * 1000, // 10 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
     })
 
   if (isLoading)
@@ -124,14 +133,15 @@ function NavUserNotes() {
                     <SidebarMenuButton
                       asChild
                       className="flex-1 px-3 py-2 rounded-md transition-colors hover:bg-muted-foreground/5 focus:bg-muted-foreground/10"
+                      onMouseEnter={() => prefetchNote(note.id)}
                     >
-                      <a
+                      <Link
                         href={`/dashboard/notes/${note.id}`}
                         className="block text-sm text-foreground"
                         title={note.title}
                       >
                         <span className="truncate block w-full max-w-full">{note.title}</span>
-                      </a>
+                      </Link>
                     </SidebarMenuButton>
                     {/* Only show small pin icon if current user has pinned it */}
                     {isNotePinnedByUser(note) && (

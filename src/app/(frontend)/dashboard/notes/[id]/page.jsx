@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Play, Pause, Clock, HelpCircle, ArrowUpRight, MoreVertical, Share, FolderOpen, Sparkles, Bot, Pin } from 'lucide-react'
 import { format } from 'date-fns'
@@ -28,6 +29,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { LexicalEditor } from '@/components/ui/lexical-editor'
+import { NoteLoadingSkeleton } from '@/components/note-loading-skeleton'
 
 // Helper to format seconds as mm:ss
 // function formatTime(seconds) {
@@ -51,7 +53,7 @@ async function fetchCurrentUser() {
   const res = await fetch('/api/users/me', { credentials: 'include' })
   if (!res.ok) throw new Error('Not authenticated')
   const data = await res.json()
-  return data.user
+  return data
 }
 
 export default function NotePage() {
@@ -96,15 +98,21 @@ export default function NotePage() {
     queryFn: () =>
       fetch(`/api/notes/${id}?depth=2`, { credentials: 'include' }).then((r) => r.json()),
     enabled: !!id,
+    staleTime: 10 * 60 * 1000, // 10 minutes - notes don't change often
+    gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache longer
+    retry: 1,
+    refetchOnWindowFocus: false,
   })
 
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
     queryFn: fetchCurrentUser,
+    staleTime: 15 * 60 * 1000, // 15 minutes - user data changes rarely
+    gcTime: 60 * 60 * 1000, // 1 hour
   })
 
-  // Check user permissions for this note
-  const getUserPermissions = () => {
+  // Memoized user permissions calculation
+  const { canEdit, canDelete, isOwner, hasAccess } = React.useMemo(() => {
     if (!note || !currentUser) return { canEdit: false, canDelete: false, isOwner: false, hasAccess: false }
     
     // Check if user is the owner
@@ -115,7 +123,7 @@ export default function NotePage() {
       return { canEdit: true, canDelete: true, isOwner: true, hasAccess: true }
     }
     
-        // Check if note is shared with this user and their permission level
+    // Check if note is shared with this user and their permission level
     if (note.sharedWith && Array.isArray(note.sharedWith)) {
       const userShare = note.sharedWith.find((share) => {
         const sharedUserId = typeof share.user === 'object' ? share.user.id : share.user
@@ -130,20 +138,16 @@ export default function NotePage() {
     }
 
     return { canEdit: false, canDelete: false, isOwner: false, hasAccess: false }
-  }
+  }, [note, currentUser])
 
-  const { canEdit, canDelete, isOwner, hasAccess } = getUserPermissions()
-
-  // Check if current user has pinned this note
-  const isUserPinned = () => {
+  // Memoized pin status calculation
+  const userHasPinned = React.useMemo(() => {
     if (!note || !currentUser || !note.pinnedBy) return false
     return note.pinnedBy.some((pin) => {
       const userId = typeof pin.user === 'object' ? pin.user.id : pin.user
       return userId === currentUser.id
     })
-  }
-
-  const userHasPinned = isUserPinned()
+  }, [note, currentUser])
 
   useEffect(() => {
     if (note && editMode) {
@@ -298,7 +302,8 @@ export default function NotePage() {
         throw new Error(errorText)
       }
       
-      queryClient.invalidateQueries(['notes'])
+      // Only invalidate the notes list, not the entire notes cache
+      queryClient.invalidateQueries({ queryKey: ['notes'], exact: true })
       router.push('/dashboard/notes/new')
     } catch (err) {
       console.error('Delete error:', err)
@@ -328,9 +333,27 @@ export default function NotePage() {
         summary: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editSummary, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
         transcript: { root: { type: 'root', version: 1, children: [{ type: 'paragraph', version: 1, children: [{ type: 'text', version: 1, text: editTranscript, format: 0, detail: 0, style: '', mode: 'normal' }], direction: 'ltr', format: '', indent: 0 }], direction: 'ltr', format: '', indent: 0 } },
       }))
+      
+      // Also update the notes list in the sidebar cache
+      queryClient.setQueryData(['notes'], old => {
+        if (!old) return old
+        return {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            docs: page.docs.map(note => 
+              note.id === id 
+                ? { ...note, title: editTitle }
+                : note
+            )
+          }))
+        }
+      })
       setEditMode(false)
+      // Show success message
+      toast.success('Note saved successfully!')
     } catch (err) {
-      alert('Failed to save changes.')
+      toast.error('Failed to save changes.')
     } finally {
       setIsSaving(false)
     }
@@ -376,6 +399,11 @@ export default function NotePage() {
             body: JSON.stringify({ userNotes: newUserNotes }),
           }
         ).then(() => {
+          // Update the cache with the new userNotes
+          queryClient.setQueryData(['note', id], old => ({
+            ...old,
+            userNotes: newUserNotes
+          }))
           setIsSavingUserNote(false)
         })
       })
@@ -400,7 +428,7 @@ export default function NotePage() {
     }
   }, [isShareDialogOpen, isCategoryDialogOpen, isAIChatDialogOpen])
 
-  if (isLoading) return <div>Loading…</div>
+  if (isLoading) return <NoteLoadingSkeleton />
   if (isError || !note || !note.id) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -545,8 +573,8 @@ export default function NotePage() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ pinnedBy: updatedPinnedBy })
                           })
-                          queryClient.invalidateQueries(['note', note.id])
-                          queryClient.invalidateQueries(['notes'])
+                          queryClient.invalidateQueries({ queryKey: ['note', note.id] })
+                          // Don't invalidate the entire notes cache for pin/unpin
                         } catch {
                           alert('Failed to update pin status')
                         }

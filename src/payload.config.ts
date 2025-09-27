@@ -33,10 +33,13 @@ export default buildConfig({
   db: postgresAdapter({
     pool: {
       connectionString: process.env.DATABASE_URI,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-      statement_timeout: 30000,
-      query_timeout: 30000,
+      max: 10, // Reduced maximum connections
+      min: 2, // Reduced minimum connections
+      idleTimeoutMillis: 60000, // Increased idle timeout
+      connectionTimeoutMillis: 10000, // Increased connection timeout
+      statement_timeout: 60000, // Increased statement timeout
+      query_timeout: 60000, // Increased query timeout
+      allowExitOnIdle: true, // Allow connections to close when idle
     },
   }),
   sharp,

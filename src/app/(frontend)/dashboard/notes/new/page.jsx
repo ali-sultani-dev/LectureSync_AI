@@ -72,7 +72,7 @@ function NewNotePage() {
     setIsWorking(true)
     try {
       const note = await CreateNewNote({ file: audioBlob })
-      queryClient.invalidateQueries(['notes'])
+      queryClient.invalidateQueries({ queryKey: ['notes'], exact: true })
       if (note?.doc?.id) {
         router.push(`/dashboard/notes/${note.doc.id}`)
       } else {

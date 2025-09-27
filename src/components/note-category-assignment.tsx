@@ -169,8 +169,8 @@ export function NoteCategoryAssignment({
 
       // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['note', note.id] })
-      queryClient.invalidateQueries({ queryKey: ['notes'] })
       queryClient.invalidateQueries({ queryKey: ['notes', 'category'] })
+      // Don't invalidate the entire notes cache for category assignment
       if (!isOwner) {
         queryClient.invalidateQueries({
           queryKey: ['personal-note-category', note.id, currentUser?.id],

@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNotePrefetch } from '@/hooks/use-note-prefetch'
+import Link from 'next/link'
 import {
   IconShare,
   IconEye,
@@ -26,36 +28,52 @@ async function fetchCurrentUser() {
   const res = await fetch('/api/users/me', { credentials: 'include' })
   if (!res.ok) throw new Error('Not authenticated')
   const data = await res.json()
-  return data.user
+  return data
 }
 
 async function fetchSharedNotes(userId: number) {
-  // Get all notes and filter for ones shared with this user
-  const res = await fetch('/api/notes?limit=100&depth=2', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch notes')
-  const data = await res.json()
+  try {
+    console.log('Fetching shared notes for user:', userId)
 
-  // Filter notes that are shared with the current user (not owned by them)
-  const sharedNotes = data.docs.filter((note: any) => {
-    // Skip notes owned by the user
-    const ownerId = typeof note.owner === 'object' ? note.owner?.id : note.owner
-    if (ownerId === userId) return false
+    // Get all notes and filter client-side for shared notes
+    const res = await fetch('/api/notes?depth=2&limit=100', { credentials: 'include' })
 
-    // Check if note is shared with this user
-    if (note.sharedWith && Array.isArray(note.sharedWith)) {
-      return note.sharedWith.some((share: any) => {
-        const sharedUserId = typeof share.user === 'object' ? share.user.id : share.user
-        return sharedUserId === userId
-      })
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error('Failed to fetch notes:', res.status, errorText)
+      throw new Error(`Failed to fetch notes: ${res.status} ${errorText}`)
     }
-    return false
-  })
 
-  return sharedNotes
+    const data = await res.json()
+    console.log('Fetched notes data:', data)
+
+    // Filter notes that are shared with the current user (not owned by them)
+    const sharedNotes = (data.docs || []).filter((note: any) => {
+      // Skip notes owned by the user
+      const ownerId = typeof note.owner === 'object' ? note.owner?.id : note.owner
+      if (ownerId === userId) return false
+
+      // Check if note is shared with this user
+      if (note.sharedWith && Array.isArray(note.sharedWith)) {
+        return note.sharedWith.some((share: any) => {
+          const sharedUserId = typeof share.user === 'object' ? share.user.id : share.user
+          return sharedUserId === userId
+        })
+      }
+      return false
+    })
+
+    console.log('Filtered shared notes:', sharedNotes)
+    return sharedNotes
+  } catch (error) {
+    console.error('Error in fetchSharedNotes:', error)
+    throw error
+  }
 }
 
 export function NavSharedNotes() {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { prefetchNote } = useNotePrefetch()
 
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
@@ -68,8 +86,17 @@ export function NavSharedNotes() {
     error,
   } = useQuery({
     queryKey: ['sharedNotes', currentUser?.id],
-    queryFn: () => fetchSharedNotes(currentUser.id),
+    queryFn: () => {
+      if (!currentUser?.id) {
+        throw new Error('User not authenticated')
+      }
+      return fetchSharedNotes(currentUser.id)
+    },
     enabled: !!currentUser?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   })
 
   if (isLoading) {
@@ -96,7 +123,9 @@ export function NavSharedNotes() {
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem>
-              <span className="px-3 py-2 text-sm text-destructive">Error loading shared notes</span>
+              <span className="px-3 py-2 text-sm text-muted-foreground">
+                Loading shared notes...
+              </span>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroupContent>
@@ -144,8 +173,12 @@ export function NavSharedNotes() {
 
                 return (
                   <SidebarMenuItem key={note.id}>
-                    <SidebarMenuButton asChild className="flex items-center justify-between">
-                      <a
+                    <SidebarMenuButton
+                      asChild
+                      className="flex items-center justify-between"
+                      onMouseEnter={() => prefetchNote(note.id)}
+                    >
+                      <Link
                         href={`/dashboard/notes/${note.id}`}
                         className="flex items-center justify-between w-full"
                         title={`${note.title} (shared by ${owner?.firstName} ${owner?.lastName})`}
@@ -181,7 +214,7 @@ export function NavSharedNotes() {
                             )}
                           </Badge>
                         </div>
-                      </a>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )

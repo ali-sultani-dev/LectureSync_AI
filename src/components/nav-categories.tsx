@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNotePrefetch } from '@/hooks/use-note-prefetch'
+import Link from 'next/link'
 import { IconFolder, IconFolderPlus, IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import {
   SidebarMenu,
@@ -44,6 +46,7 @@ export function NavCategories() {
   const [isMainCollapsed, setIsMainCollapsed] = useState(false)
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null)
   const router = useRouter()
+  const { prefetchNote } = useNotePrefetch()
 
   const {
     data: categoriesData,
@@ -52,6 +55,10 @@ export function NavCategories() {
   } = useQuery({
     queryKey: ['categories'],
     queryFn: fetchCategories,
+    staleTime: 10 * 60 * 1000, // 10 minutes - categories don't change often
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   })
 
   const toggleCategory = (categoryId: number) => {
@@ -201,9 +208,14 @@ function CategoryItem({
             {notes.map((note: any) => (
               <SidebarMenuItem key={note.id}>
                 <SidebarMenuButton asChild size="sm">
-                  <a href={`/dashboard/notes/${note.id}`} className="text-sm" title={note.title}>
+                  <Link
+                    href={`/dashboard/notes/${note.id}`}
+                    className="text-sm"
+                    title={note.title}
+                    onMouseEnter={() => prefetchNote(note.id)}
+                  >
                     <span className="truncate">{note.title}</span>
-                  </a>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
