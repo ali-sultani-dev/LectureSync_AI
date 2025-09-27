@@ -169,6 +169,7 @@ function CategoryItem({
   isExpanded: boolean
   onToggle: () => void
 }) {
+  const { prefetchNote } = useNotePrefetch()
   const { data: notesData } = useQuery({
     queryKey: ['notes', 'category', category.id],
     queryFn: () => fetchNotesByCategory(category.id),
